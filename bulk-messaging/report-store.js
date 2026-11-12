@@ -10,7 +10,10 @@
  */
 
 const DB_NAME = 'OpenWaReportsDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+
+/** Campaign states that are not finished yet (a page reload may have orphaned them). */
+export const OPEN_CAMPAIGN_STATES = ['in_progress', 'running', 'scheduled', 'interrupted'];
 
 class ReportStoreService {
   constructor() {
@@ -51,6 +54,18 @@ class ReportStoreService {
         // 4. Draft State Store (Refresh Protection)
         if (!db.objectStoreNames.contains('draft_store')) {
           db.createObjectStore('draft_store', { keyPath: 'key' });
+        }
+
+        // 5. Activity log: one row per action taken on a campaign (v2)
+        if (!db.objectStoreNames.contains('campaign_events')) {
+          const ev = db.createObjectStore('campaign_events', { keyPath: 'id' });
+          ev.createIndex('campaignId', 'campaignId', { unique: false });
+        }
+
+        // 6. Send plan (recipients + message + settings) so an interrupted campaign can resume (v2).
+        //    Kept apart from `campaigns` so listing reports never loads base64 attachments.
+        if (!db.objectStoreNames.contains('campaign_plans')) {
+          db.createObjectStore('campaign_plans', { keyPath: 'campaignId' });
         }
       };
 
@@ -189,6 +204,12 @@ class ReportStoreService {
         mediaType: meta.mediaType || 'text',
         hasPtt: Boolean(meta.hasPtt),
         options: meta.options || {},
+        totalBatches: Number(meta.totalBatches) || 0,
+        batches: Array.isArray(meta.batches) ? meta.batches : [],
+        scheduledFor: meta.scheduledFor || null,
+        startedAt: meta.startedAt || null,
+        heartbeatAt: meta.heartbeatAt || null,
+        statusNote: meta.statusNote || '',
       };
 
       store.put(record);
@@ -227,7 +248,9 @@ class ReportStoreService {
       results.forEach((res, index) => {
         const rawChatId = res.chatId || '';
         const recipient = rawChatId.replace('@c.us', '').replace('@g.us', '');
-        const logId = `${campaignId}_${res.batchId || 'b'}_${recipient}_${index}_${Date.now()}`;
+        // Deterministic per (batch, position): re-saving a batch after a reload overwrites, never duplicates.
+        const position = Number.isInteger(res.itemIndex) ? res.itemIndex : index;
+        const logId = `${campaignId}_${res.batchId || 'b'}_${position}`;
 
         const logEntry = {
           id: logId,
@@ -240,8 +263,10 @@ class ReportStoreService {
           status: res.status === 'success' || res.status === 'sent' ? 'sent' : (res.status || 'failed'),
           waMessageId: res.messageId || res.waMessageId || (res.id && typeof res.id === 'string' ? res.id : ''),
           error: res.error ? (typeof res.error === 'object' ? (res.error.message || JSON.stringify(res.error)) : String(res.error)) : '',
-          timestamp: res.timestamp || Date.now(),
+          timestamp: res.timestamp || (res.sentAt ? new Date(res.sentAt).getTime() : Date.now()),
           batchId: res.batchId || '',
+          batchIndex: res.batchIndex || null,
+          itemIndex: position,
         };
 
         store.put(logEntry);
@@ -301,18 +326,15 @@ class ReportStoreService {
   async deleteCampaign(campaignId) {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(['campaigns', 'campaign_logs'], 'readwrite');
-      const campStore = tx.objectStore('campaigns');
-      const logStore = tx.objectStore('campaign_logs');
-      const logIndex = logStore.index('campaignId');
+      const tx = db.transaction(['campaigns', 'campaign_logs', 'campaign_events', 'campaign_plans'], 'readwrite');
+      tx.objectStore('campaigns').delete(campaignId);
+      tx.objectStore('campaign_plans').delete(campaignId);
 
-      campStore.delete(campaignId);
-
-      const logsReq = logIndex.getAllKeys(campaignId);
-      logsReq.onsuccess = () => {
-        const keys = logsReq.result || [];
-        keys.forEach(k => logStore.delete(k));
-      };
+      ['campaign_logs', 'campaign_events'].forEach(name => {
+        const store = tx.objectStore(name);
+        const keysReq = store.index('campaignId').getAllKeys(campaignId);
+        keysReq.onsuccess = () => (keysReq.result || []).forEach(k => store.delete(k));
+      });
 
       tx.oncomplete = () => resolve(true);
       tx.onerror = (e) => reject(e.target.error);
@@ -322,12 +344,113 @@ class ReportStoreService {
   async clearAllCampaigns() {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(['campaigns', 'campaign_logs'], 'readwrite');
-      tx.objectStore('campaigns').clear();
-      tx.objectStore('campaign_logs').clear();
+      const stores = ['campaigns', 'campaign_logs', 'campaign_events', 'campaign_plans'];
+      const tx = db.transaction(stores, 'readwrite');
+      stores.forEach(n => tx.objectStore(n).clear());
       tx.oncomplete = () => resolve(true);
       tx.onerror = (e) => reject(e.target.error);
     });
+  }
+
+  async getCampaign(campaignId) {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction('campaigns', 'readonly').objectStore('campaigns').get(campaignId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /** Campaigns that never reached a final state, newest first. */
+  async getOpenCampaigns() {
+    const all = await this.getAllCampaigns();
+    return all.filter(c => OPEN_CAMPAIGN_STATES.includes(c.status));
+  }
+
+  // ----- Activity log -----
+
+  /**
+   * Record one action on a campaign. level: 'info' | 'ok' | 'warn' | 'bad'.
+   * Never throws: a logging failure must not break sending.
+   */
+  async addCampaignEvent(campaignId, { level = 'info', type = 'note', message = '', at } = {}) {
+    if (!campaignId) return null;
+    try {
+      const db = await this.getDB();
+      const ts = at || Date.now();
+      const record = {
+        id: `${campaignId}_ev_${ts}_${Math.random().toString(36).slice(2, 7)}`,
+        campaignId,
+        ts,
+        level,
+        type,
+        message: String(message),
+      };
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction('campaign_events', 'readwrite');
+        tx.objectStore('campaign_events').put(record);
+        tx.oncomplete = () => resolve(record);
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    } catch (err) {
+      console.warn('Could not save campaign event:', err);
+      return null;
+    }
+  }
+
+  async getCampaignEvents(campaignId) {
+    try {
+      const db = await this.getDB();
+      return await new Promise((resolve, reject) => {
+        const req = db.transaction('campaign_events', 'readonly').objectStore('campaign_events').index('campaignId').getAll(campaignId);
+        req.onsuccess = () => resolve((req.result || []).sort((a, b) => a.ts - b.ts));
+        req.onerror = (e) => reject(e.target.error);
+      });
+    } catch (err) {
+      console.warn('Could not read campaign events:', err);
+      return [];
+    }
+  }
+
+  // ----- Send plan (for resume) -----
+
+  async saveCampaignPlan(campaignId, plan) {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('campaign_plans', 'readwrite');
+      tx.objectStore('campaign_plans').put({ campaignId, ...plan, savedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async getCampaignPlan(campaignId) {
+    try {
+      const db = await this.getDB();
+      return await new Promise((resolve, reject) => {
+        const req = db.transaction('campaign_plans', 'readonly').objectStore('campaign_plans').get(campaignId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = (e) => reject(e.target.error);
+      });
+    } catch (err) {
+      console.warn('Could not read campaign plan:', err);
+      return null;
+    }
+  }
+
+  /** Finished campaigns don't need their plan (it can hold a large attachment). */
+  async deleteCampaignPlan(campaignId) {
+    try {
+      const db = await this.getDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('campaign_plans', 'readwrite');
+        tx.objectStore('campaign_plans').delete(campaignId);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    } catch (err) {
+      console.warn('Could not delete campaign plan:', err);
+    }
   }
 
   // ==========================================
@@ -494,7 +617,11 @@ class ReportStoreService {
       'Sent Count': c.sentCount,
       'Failed Count': c.failedCount,
       'Pending Count': c.pendingCount || 0,
-      'Success Rate (%)': c.totalRecipients > 0 ? (((c.sentCount || 0) / c.totalRecipients) * 100).toFixed(1) + '%' : '0%',
+      'Total Messages': c.totalMessages || c.totalRecipients,
+      'Success Rate (%)': (c.totalMessages || c.totalRecipients) > 0 ? Math.min(100, ((c.sentCount || 0) / (c.totalMessages || c.totalRecipients)) * 100).toFixed(1) + '%' : '0%',
+      'Started': c.startedAt ? new Date(c.startedAt).toLocaleString() : '',
+      'Finished': c.completedAt ? new Date(c.completedAt).toLocaleString() : '',
+      'Status Note': c.statusNote || '',
       'Message Preview': c.messagePreview || '',
     }));
 
