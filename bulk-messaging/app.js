@@ -2,10 +2,31 @@
  * OpenWA Dedicated Bulk Messaging Module - Main Application Controller
  */
 
-import { OpenWaApiService } from './api-service.js';
-import { ContactParser } from './contact-parser.js';
-import { CampaignManager } from './campaign-manager.js';
-import { ReportStore } from './report-store.js';
+import { OpenWaApiService } from './api-service.js?v=20261112c';
+import { ContactParser } from './contact-parser.js?v=20261112c';
+import { CampaignManager } from './campaign-manager.js?v=20261112c';
+import { ReportStore } from './report-store.js?v=20261112c';
+import { icon, hydrateIcons } from './icons.js?v=20261112c';
+
+/** Visibility is driven by the `hidden` attribute (styles.css: [hidden] { display:none !important }). */
+const show = (el, visible = true) => { if (el) el.hidden = !visible; };
+const hide = el => show(el, false);
+
+// Backend contract (src/modules/message/dto/*.ts): text max 4096, caption max 1024,
+// <= 100 messages per send-bulk call, delayBetweenMessages 1000..60000 ms, randomizeDelay adds 0..2 s.
+const TEXT_MAX = 4096;
+const CAPTION_MAX = 1024;
+const MAX_BLOCKS = 5;
+// Each base64 attachment is repeated in every item of a batch and the whole request must fit the
+// server's default 25 MB body limit, so local uploads are capped well below it (URLs are not).
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+
+const EMOJI_SETS = {
+  Smileys: '😀 😃 😄 😁 😊 🙂 😉 😍 🥰 😘 😎 🤩 🥳 😇 🤗 🤔 😅 😂 🤣 😢 😮 😴 🙄 😬',
+  Gestures: '👋 👍 👎 👏 🙌 🙏 🤝 💪 👉 👆 ✌️ 🤞 👌 ✋ 🫶 ✍️',
+  Symbols: '✅ ☑️ ✔️ ❌ ⚠️ ❗ ❓ ⭐ 🌟 ✨ 🔥 💯 ❤️ 💚 💙 💛 🎉 🎊 🎁 🏆 💡 🔔 📢 🆕',
+  Business: '📦 🚚 🛒 🛍️ 💳 💰 💵 🧾 📅 ⏰ ⏳ 📍 📞 📱 💬 📧 🔗 📝 📄 📊 🏷️ 🔖 🎟️ 🏪',
+};
 
 class BulkApp {
   constructor() {
@@ -21,9 +42,18 @@ class BulkApp {
     this.currentAttachedMedia = null; // { type, base64, url, mimetype, filename, caption, ptt }
     this.activeQrSessionId = null;
     this.qrPollInterval = null;
+    this.blocks = ['']; // Message blocks, each sent as its own WhatsApp message in order
+    this.activeBlock = 0;
+    this.addressbookMode = 'contacts';
 
+    hydrateIcons();
     this.initElements();
     this.bindEvents();
+    this.renderBlockTabs();
+    this.updateDelayDisplay(this.delaySlider.value);
+    this.renderContactsTable();
+    this.renderMonitorResults([]);
+    this.refreshComposer();
     this.initSession();
   }
 
@@ -227,6 +257,31 @@ class BulkApp {
     this.activeDrilldownCampaignId = null;
     this.currentDrilldownLogs = [];
     this.drilldownFilter = 'all';
+
+    // Redesign: KPIs, blocks, emoji, preview, checklist, toasts
+    this.kpiRecipients = document.getElementById('kpiRecipients');
+    this.kpiMessages = document.getElementById('kpiMessages');
+    this.kpiBatches = document.getElementById('kpiBatches');
+    this.kpiDuration = document.getElementById('kpiDuration');
+    this.internetStatusTag = document.getElementById('internetStatusTag');
+    this.messageBlockTabs = document.getElementById('messageBlockTabs');
+    this.btnAddBlock = document.getElementById('btnAddBlock');
+    this.btnRemoveBlock = document.getElementById('btnRemoveBlock');
+    this.blockLabel = document.getElementById('blockLabel');
+    this.btnMono = document.getElementById('btnMono');
+    this.emojiPicker = document.getElementById('emojiPicker');
+    this.btnClearMedia = document.getElementById('btnClearMedia');
+    this.messagePreview = document.getElementById('messagePreview');
+    this.previewRecipient = document.getElementById('previewRecipient');
+    this.itemsPerRecipient = document.getElementById('itemsPerRecipient');
+    this.sendChecklist = document.getElementById('sendChecklist');
+    this.monitorSubText = document.getElementById('monitorSubText');
+    this.toastHost = document.getElementById('toastHost');
+    this.btnSaveCurrentAsTemplate = document.getElementById('btnSaveCurrentAsTemplate');
+    this.addressbookSearchInput = document.getElementById('addressbookSearchInput');
+    this.addressbookSelectAll = document.getElementById('addressbookSelectAll');
+    this.addressbookSelectedCount = document.getElementById('addressbookSelectedCount');
+    this.panelRecipients = document.querySelector('.panel-recipients');
   }
 
   bindEvents() {
@@ -262,12 +317,12 @@ class BulkApp {
     });
 
     this.qrZoomSlider?.addEventListener('input', (e) => {
-      this.setEnlargedQrZoom(parseInt(e.target.value, 10) || 360);
+      this.setEnlargedQrZoom(parseInt(e.target.value, 10) || 320);
     });
 
     this.btnZoomOutSlider?.addEventListener('click', () => {
       if (this.qrZoomSlider) {
-        this.qrZoomSlider.value = Math.max(260, parseInt(this.qrZoomSlider.value, 10) - 20);
+        this.qrZoomSlider.value = Math.max(240, parseInt(this.qrZoomSlider.value, 10) - 20);
         this.setEnlargedQrZoom(parseInt(this.qrZoomSlider.value, 10));
       }
     });
@@ -281,8 +336,8 @@ class BulkApp {
 
     this.btnEnlargeResetSize?.addEventListener('click', () => {
       if (this.qrZoomSlider) {
-        this.qrZoomSlider.value = 360;
-        this.setEnlargedQrZoom(360);
+        this.qrZoomSlider.value = 320;
+        this.setEnlargedQrZoom(320);
       }
     });
 
@@ -317,12 +372,9 @@ class BulkApp {
       });
     });
 
-    // Auto-save composer text changes
-    // Debounced: avoid an IndexedDB write on every keystroke.
-    this.messageTextarea.addEventListener('input', () => {
-      clearTimeout(this.composerDraftTimer);
-      this.composerDraftTimer = setTimeout(() => this.saveComposerDraft(), 400);
-    });
+    // Auto-save composer text changes (debounced: avoid an IndexedDB write on every keystroke).
+    this.messageTextarea.addEventListener('input', () => this.scheduleComposerDraft());
+    this.messageTextarea.addEventListener('keydown', (e) => this.handleEditorShortcut(e));
 
     // Search & Filter (debounced so large lists don't re-render per keystroke)
     this.contactSearchInput.addEventListener('input', (e) => {
@@ -342,6 +394,7 @@ class BulkApp {
       if (rec) {
         rec.selected = cb.checked;
         this.updateStats();
+        this.syncSelectAllCheckbox();
       }
     });
 
@@ -352,8 +405,8 @@ class BulkApp {
 
     this.selectAllCheckbox.addEventListener('change', (e) => {
       const checked = e.target.checked;
-      // Never auto-select duplicate rows: that would message the same number twice.
-      this.records.forEach(r => {
+      // Applies to the rows currently shown. Never auto-select duplicates: that would message a number twice.
+      this.getFilteredRecords().forEach(r => {
         if (r.isValid && !r.isDuplicate) r.selected = checked;
       });
       this.renderContactsTable();
@@ -368,25 +421,49 @@ class BulkApp {
         this.insertTextAtCursor(this.messageTextarea, val);
         e.target.value = '';
         this.updateComposerStats();
+        this.scheduleComposerDraft();
       }
     });
 
     this.btnBold.addEventListener('click', () => this.wrapSelectedText(this.messageTextarea, '*'));
     this.btnItalic.addEventListener('click', () => this.wrapSelectedText(this.messageTextarea, '_'));
     this.btnStrike.addEventListener('click', () => this.wrapSelectedText(this.messageTextarea, '~'));
-    this.btnEmoji.addEventListener('click', () => this.insertEmoji());
+    this.btnMono?.addEventListener('click', () => this.wrapSelectedText(this.messageTextarea, '```'));
+
+    // Emoji picker
+    this.buildEmojiPicker();
+    this.btnEmoji.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleEmojiPicker();
+    });
+    this.emojiPicker?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-emoji]');
+      if (btn) this.insertEmoji(btn.dataset.emoji);
+    });
+    document.addEventListener('click', (e) => {
+      if (this.emojiPicker && !this.emojiPicker.hidden && !e.target.closest('.emoji-anchor')) this.toggleEmojiPicker(false);
+    });
+
+    // Message blocks
+    this.messageBlockTabs?.addEventListener('click', (e) => {
+      const tab = e.target.closest('[data-block]');
+      if (tab) this.switchBlock(Number(tab.dataset.block));
+    });
+    this.btnAddBlock?.addEventListener('click', () => this.addBlock());
+    this.btnRemoveBlock?.addEventListener('click', () => this.removeBlock());
 
     // Media
     this.btnAttachFile.addEventListener('click', () => this.mediaFileInput.click());
     this.mediaFileInput.addEventListener('change', (e) => this.handleMediaFileUpload(e));
     this.mediaTypeSelect.addEventListener('change', () => this.handleMediaTypeChange());
     this.mediaUrlInput.addEventListener('input', () => this.handleMediaUrlChange());
+    this.btnClearMedia?.addEventListener('click', () => this.clearMedia());
+    this.mediaCaptionInput.addEventListener('input', () => this.refreshComposer());
+    this.sendSeparateTextMessageCheck?.addEventListener('change', () => this.refreshComposer());
 
     // Speed Presets
     document.querySelectorAll('.speed-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
         const delay = parseInt(btn.dataset.delay, 10);
         this.delaySlider.value = delay;
         this.updateDelayDisplay(delay);
@@ -396,6 +473,25 @@ class BulkApp {
     this.delaySlider.addEventListener('input', (e) => {
       this.updateDelayDisplay(e.target.value);
     });
+
+    // Anything that changes the estimate or the checklist
+    this.batchSizeInput.addEventListener('change', () => {
+      this.batchSizeInput.value = this.getBatchSize();
+      this.refreshComposer();
+    });
+    this.batchSizeInput.addEventListener('input', () => this.updateKpis());
+    [this.interBatchDelaySelect, this.randomizeDelayCheck].forEach(el => el.addEventListener('change', () => this.updateKpis()));
+    this.scheduleDateTimeInput.addEventListener('change', () => this.renderChecklist());
+
+    // Connectivity indicator
+    const updateOnline = () => {
+      if (!this.internetStatusTag) return;
+      this.internetStatusTag.className = `status-dot ${navigator.onLine ? 'ok' : 'bad'}`;
+      this.internetStatusTag.textContent = navigator.onLine ? 'Online' : 'Offline';
+    };
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+    updateOnline();
 
     // Execution Buttons
     this.btnSendNow.addEventListener('click', () => this.executeCampaign(false));
@@ -424,8 +520,24 @@ class BulkApp {
     document.querySelectorAll('.btnCloseModal').forEach(btn => {
       btn.addEventListener('click', () => {
         const modalId = btn.dataset.modal;
-        if (modalId) document.getElementById(modalId).style.display = 'none';
+        if (modalId) this.closeModal(document.getElementById(modalId));
       });
+    });
+    // Backdrop click and Escape close the top-most open modal.
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('mousedown', (e) => {
+        if (e.target === overlay) this.closeModal(overlay);
+      });
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (this.emojiPicker && !this.emojiPicker.hidden) {
+        this.toggleEmojiPicker(false);
+        this.btnEmoji?.focus();
+        return;
+      }
+      const open = [...document.querySelectorAll('.modal-overlay:not([hidden])')];
+      if (open.length) this.closeModal(open[open.length - 1]);
     });
 
     this.btnOpenApiConfig.addEventListener('click', async () => {
@@ -440,7 +552,7 @@ class BulkApp {
         } catch {}
       }
       this.apiKeyInput.value = this.api.getApiKey();
-      this.modalApiSettings.style.display = 'grid';
+      show(this.modalApiSettings);
     });
 
     this.btnTestApiConnection.addEventListener('click', () => this.testApiConnection());
@@ -448,17 +560,28 @@ class BulkApp {
 
     this.btnLoadTemplates.addEventListener('click', () => this.openTemplatesModal());
     this.btnShowCreateTemplate.addEventListener('click', () => {
-      this.createTemplateForm.style.display = 'flex';
+      show(this.createTemplateForm);
     });
     this.btnCancelNewTemplate.addEventListener('click', () => {
-      this.createTemplateForm.style.display = 'none';
+      hide(this.createTemplateForm);
     });
     this.btnSaveNewTemplate.addEventListener('click', () => this.saveNewTemplate());
+    this.btnSaveCurrentAsTemplate?.addEventListener('click', () => {
+      this.newTemplateBody.value = this.messageTextarea.value || '';
+      show(this.createTemplateForm);
+      this.newTemplateName.focus();
+    });
 
     this.btnFetchAddressbook.addEventListener('click', () => this.openAddressbookModal());
     this.btnTabLoadContacts.addEventListener('click', () => this.loadSessionContacts());
     this.btnTabLoadGroups.addEventListener('click', () => this.loadSessionGroups());
     this.btnImportSelectedAddressbook.addEventListener('click', () => this.importSelectedAddressbook());
+    this.addressbookSearchInput?.addEventListener('input', () => this.filterAddressbook());
+    this.addressbookSelectAll?.addEventListener('change', (e) => {
+      this.addressbookTableBody.querySelectorAll('tr:not([hidden]) input[type="checkbox"]').forEach(cb => { cb.checked = e.target.checked; });
+      this.updateAddressbookCount();
+    });
+    this.addressbookTableBody.addEventListener('change', () => this.updateAddressbookCount());
 
     this.btnStatsModal.addEventListener('click', () => this.openStatsModal());
   }
@@ -505,30 +628,51 @@ class BulkApp {
         }
         this.updateSessionStatus();
       } else {
-        this.sessionSelect.innerHTML = '<option value="">No sessions configured</option>';
-        this.sessionStatusPill.className = 'cap-pill unsupported';
-        this.sessionStatusPill.textContent = 'No Session';
+        this.currentSessionId = null;
+        this.sessionSelect.innerHTML = '<option value="">No numbers yet. Add one in Manage numbers</option>';
+        this.sessionStatusPill.className = 'status-badge bad';
+        this.sessionStatusPill.textContent = 'No number';
+        this.activeSessionNameTag.textContent = '—';
+        this.waReadyStatusTag.className = 'status-dot bad';
+        this.waReadyStatusTag.textContent = 'WhatsApp: not linked';
       }
 
-      this.apiConnectionStatus.className = 'cap-pill supported';
-      this.apiConnectionStatus.innerHTML = '<span class="dot green"></span> API Connected';
+      this.apiConnectionStatus.className = 'status-dot ok';
+      this.apiConnectionStatus.textContent = 'API connected';
+      this.apiConnectionStatus.onclick = null;
+      this.apiConnectionStatus.removeAttribute('role');
     } catch (err) {
       console.warn('Could not fetch sessions on load:', err.message);
       const isAuth = err.status === 401 || String(err.message).toLowerCase().includes('api key');
-      this.apiConnectionStatus.className = 'cap-pill unsupported';
-      this.apiConnectionStatus.style.cursor = 'pointer';
-      this.apiConnectionStatus.innerHTML = isAuth
-        ? `<span class="dot red"></span> API Key Required (Click to Set)`
-        : `<span class="dot red"></span> API Disconnected`;
-      this.apiConnectionStatus.onclick = () => {
-        this.btnOpenApiConfig.click();
-      };
+      this.apiConnectionStatus.className = 'status-dot bad clickable';
+      this.apiConnectionStatus.setAttribute('role', 'button');
+      this.apiConnectionStatus.textContent = isAuth ? 'API key required (click to set)' : 'API unreachable (click to configure)';
+      this.apiConnectionStatus.onclick = () => this.btnOpenApiConfig.click();
       this.sessionSelect.innerHTML = `<option value="">${isAuth ? 'Enter API key in settings' : 'Cannot reach API'}</option>`;
+      this.sessionStatusPill.className = 'status-badge bad';
+      this.sessionStatusPill.textContent = 'Offline';
     }
 
-    this.updateComposerStats();
-    await this.checkAndRestoreDraft();
+    if (!this.draftRestored) {
+      this.draftRestored = true;
+      await this.checkAndRestoreDraft();
+    }
+    this.refreshComposer();
     await this.updateReportsBadge();
+  }
+
+  /** Human label for a session status (badges capitalise via CSS). */
+  statusLabel(status) {
+    if (status === 'qr_ready') return 'QR ready';
+    return String(status || 'unknown').replace(/_/g, ' ');
+  }
+
+  /** status-badge colour modifier for a session status. */
+  sessionTone(status) {
+    if (status === 'ready') return 'ok';
+    if (status === 'qr_ready' || status === 'authenticating' || status === 'initializing') return 'warn';
+    if (status === 'failed' || status === 'disconnected') return 'bad';
+    return 'neutral';
   }
 
   async updateSessionStatus() {
@@ -538,19 +682,23 @@ class BulkApp {
       const session = await this.api.getSession(this.currentSessionId);
       const isReady = session.status === 'ready';
       const sessionName = session.name || 'Unknown';
-      const sessionPhone = session.phone ? ` (${session.phone})` : '';
-      
-      this.activeSessionNameTag.textContent = `Session: ${sessionName}${sessionPhone}`;
-      this.sessionStatusPill.className = isReady ? 'cap-pill supported' : 'cap-pill unsupported';
-      this.sessionStatusPill.textContent = session.status || 'unknown';
+      const sessionPhone = session.phone ? ` · +${session.phone}` : '';
+      // Keep the cached list in step so the checklist and send guard see the live status.
+      const cached = this.sessions.find(s => s.id === session.id);
+      if (cached) Object.assign(cached, { status: session.status, phone: session.phone });
 
-      this.waReadyStatusTag.className = isReady ? 'status-tag green' : 'status-tag red';
-      this.waReadyStatusTag.textContent = isReady ? '● WhatsApp: Ready' : `● WhatsApp: ${session.status}`;
+      this.activeSessionNameTag.textContent = `${sessionName}${sessionPhone}`;
+      this.sessionStatusPill.className = `status-badge ${this.sessionTone(session.status)}`;
+      this.sessionStatusPill.textContent = this.statusLabel(session.status);
+
+      this.waReadyStatusTag.className = `status-dot ${isReady ? 'ok' : 'bad'}`;
+      this.waReadyStatusTag.textContent = isReady ? 'WhatsApp ready' : `WhatsApp: ${this.statusLabel(session.status)}`;
     } catch {
       const fallback = this.sessions.find(s => s.id === this.currentSessionId);
-      this.sessionStatusPill.className = 'cap-pill unsupported';
+      this.sessionStatusPill.className = 'status-badge bad';
       this.sessionStatusPill.textContent = fallback?.status || 'disconnected';
     }
+    this.renderChecklist();
   }
 
   // ========== Contact Import & Handling ==========
@@ -571,7 +719,7 @@ class BulkApp {
       }
 
       if (!parsed.headers || parsed.headers.length === 0) {
-        alert('Could not detect columns in the uploaded file.');
+        this.toast('Could not detect columns in the uploaded file.', 'bad');
         return;
       }
 
@@ -584,7 +732,7 @@ class BulkApp {
       this.updateStats();
       this.saveCurrentDraft();
     } catch (err) {
-      alert(`Error parsing file: ${err.message}`);
+      this.toast(`Error parsing file: ${err.message}`, 'bad');
     } finally {
       this.fileImportInput.value = '';
     }
@@ -611,7 +759,7 @@ class BulkApp {
 
   clearContacts() {
     this.records = [];
-    this.duplicateBanner.style.display = 'none';
+    hide(this.duplicateBanner);
     this.renderContactsTable();
     this.updateStats();
     this.saveCurrentDraft();
@@ -622,11 +770,11 @@ class BulkApp {
     this.records = ContactParser.removeDuplicates(this.records);
     const removed = beforeCount - this.records.length;
     
-    this.duplicateBanner.style.display = 'none';
+    hide(this.duplicateBanner);
     this.renderContactsTable();
     this.updateStats();
     this.saveCurrentDraft();
-    alert(`Successfully removed ${removed} duplicate number(s). Unique valid recipients preserved.`);
+    this.toast(`Successfully removed ${removed} duplicate number(s). Unique valid recipients preserved.`, 'ok');
   }
 
   showDuplicateBanner(stats) {
@@ -634,38 +782,56 @@ class BulkApp {
       this.dupCount.textContent = stats.duplicates;
       this.uniqueCount.textContent = stats.unique;
       this.invalidCount.textContent = stats.invalid;
-      this.duplicateBanner.style.display = 'flex';
+      show(this.duplicateBanner);
     } else {
-      this.duplicateBanner.style.display = 'none';
+      hide(this.duplicateBanner);
     }
+  }
+
+  isGroupRecord(r) {
+    return Boolean(r.chatId && r.chatId.endsWith('@g.us'));
+  }
+
+  /** Records matching the active filter and search, in list order. */
+  getFilteredRecords() {
+    let filtered = this.records;
+    switch (this.activeFilter) {
+      case 'unique': filtered = filtered.filter(r => r.isValid && !r.isDuplicate); break;
+      case 'selected': filtered = filtered.filter(r => r.selected && r.isValid); break;
+      case 'duplicates': filtered = filtered.filter(r => r.isDuplicate); break;
+      case 'invalid': filtered = filtered.filter(r => !r.isValid); break;
+      case 'groups': filtered = filtered.filter(r => this.isGroupRecord(r)); break;
+      default: break;
+    }
+    const q = this.searchQuery;
+    if (q) {
+      filtered = filtered.filter(r =>
+        (r.name && r.name.toLowerCase().includes(q)) ||
+        (r.number && r.number.includes(q)) ||
+        (r.rawNumber && String(r.rawNumber).includes(q)) ||
+        [r.var1, r.var2, r.var3].some(v => v && String(v).toLowerCase().includes(q))
+      );
+    }
+    return filtered;
+  }
+
+  syncSelectAllCheckbox(filtered = this.getFilteredRecords()) {
+    const selectable = filtered.filter(r => r.isValid && !r.isDuplicate);
+    const selectedCount = selectable.filter(r => r.selected).length;
+    this.selectAllCheckbox.checked = selectable.length > 0 && selectedCount === selectable.length;
+    this.selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < selectable.length;
+    this.selectAllCheckbox.disabled = selectable.length === 0;
   }
 
   renderContactsTable() {
     const tbody = this.contactsTableBody;
-    tbody.innerHTML = '';
-
-    let filtered = this.records;
-
-    // Filter by category
-    if (this.activeFilter === 'unique') {
-      filtered = filtered.filter(r => r.isValid && !r.isDuplicate);
-    } else if (this.activeFilter === 'duplicates') {
-      filtered = filtered.filter(r => r.isDuplicate);
-    } else if (this.activeFilter === 'invalid') {
-      filtered = filtered.filter(r => !r.isValid);
-    }
-
-    // Filter by search query
-    if (this.searchQuery) {
-      filtered = filtered.filter(r =>
-        (r.name && r.name.toLowerCase().includes(this.searchQuery)) ||
-        (r.number && r.number.includes(this.searchQuery)) ||
-        (r.var1 && r.var1.toLowerCase().includes(this.searchQuery))
-      );
-    }
+    const filtered = this.getFilteredRecords();
+    this.syncSelectAllCheckbox(filtered);
 
     if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="table-empty">No matching records found.</td></tr>`;
+      tbody.innerHTML = this.records.length === 0
+        ? `<tr><td colspan="5" class="table-empty">${icon('users', 28)}<strong>No recipients yet</strong>Import an Excel/CSV file or pick WhatsApp contacts.</td></tr>`
+        : `<tr><td colspan="5" class="table-empty">${icon('search', 28)}<strong>No matches</strong>Try another search or filter.</td></tr>`;
       return;
     }
 
@@ -674,43 +840,119 @@ class BulkApp {
     const visible = filtered.length > MAX_ROWS ? filtered.slice(0, MAX_ROWS) : filtered;
     let html = '';
     for (const r of visible) {
-      const rowClass = r.isDuplicate ? 'duplicate' : (!r.isValid ? 'invalid' : '');
+      const rowClass = !r.isValid ? 'is-invalid' : (r.isDuplicate ? 'is-duplicate' : '');
       const badgeHtml = !r.isValid
-        ? `<span class="badge badge-invalid">Invalid</span>`
-        : (r.isDuplicate ? `<span class="badge badge-duplicate">Duplicate</span>` : `<span class="badge badge-valid">Valid</span>`);
+        ? '<span class="status-badge bad sm">Invalid</span>'
+        : r.isDuplicate
+          ? '<span class="status-badge warn sm">Duplicate</span>'
+          : this.isGroupRecord(r)
+            ? '<span class="status-badge purple sm">Group</span>'
+            : '<span class="status-badge ok sm">Valid</span>';
       html += `<tr class="${rowClass}">
-        <td><input type="checkbox" data-id="${this.escape(r.id)}" ${r.selected ? 'checked' : ''} ${!r.isValid ? 'disabled' : ''} /></td>
+        <td class="col-check"><input type="checkbox" data-id="${this.escape(r.id)}" aria-label="Select ${this.escape(r.name || r.number || r.rawNumber)}" ${r.selected ? 'checked' : ''} ${!r.isValid ? 'disabled' : ''} /></td>
         <td><strong>${this.escape(r.name || '—')}</strong></td>
-        <td>${this.escape(r.number || r.rawNumber)}</td>
-        <td class="cell-muted">${this.escape(r.var1 || '—')}</td>
-        <td>${badgeHtml}</td>
+        <td class="mono">${this.escape(r.number || r.rawNumber)}</td>
+        <td class="col-var cell-muted">${this.escape(r.var1 || '—')}</td>
+        <td class="col-status">${badgeHtml}</td>
       </tr>`;
     }
     if (filtered.length > MAX_ROWS) {
-      html += `<tr><td colspan="5" class="table-empty">Showing first ${MAX_ROWS} of ${filtered.length.toLocaleString()} records. Use search or filters to narrow the list.</td></tr>`;
+      html += `<tr><td colspan="5" class="table-empty">Showing the first ${MAX_ROWS} of ${filtered.length.toLocaleString()} records. Search or filter to narrow the list; all rows are still included when sending.</td></tr>`;
     }
     tbody.innerHTML = html;
   }
 
   updateStats() {
     const total = this.records.length;
-    const selected = this.records.filter(r => r.selected && r.isValid).length;
-    const groups = this.records.filter(r => r.chatId && r.chatId.endsWith('@g.us')).length;
+    const selected = this.getSelectedRecipients().length;
+    const groups = this.records.filter(r => this.isGroupRecord(r)).length;
     const contacts = total - groups;
 
-    this.footerTotal.textContent = total;
-    this.footerContacts.textContent = contacts;
-    this.footerGroups.textContent = groups;
-    this.footerSelected.textContent = selected;
-    this.composerRecipientCount.textContent = selected;
+    this.footerTotal.textContent = total.toLocaleString();
+    this.footerContacts.textContent = contacts.toLocaleString();
+    this.footerGroups.textContent = groups.toLocaleString();
+    this.footerSelected.textContent = selected.toLocaleString();
+    this.composerRecipientCount.textContent = selected.toLocaleString();
+    this.refreshComposer();
   }
 
   // ========== Message Composer & Media ==========
 
+  /** Sync the textarea into the active block, then refresh every view that depends on the message. */
   updateComposerStats() {
+    this.blocks[this.activeBlock] = this.messageTextarea.value || '';
+    this.refreshComposer();
+  }
+
+  refreshComposer() {
     const text = this.messageTextarea.value || '';
     this.charCount.textContent = text.length;
+    this.charCount.parentElement?.classList.toggle('over', text.length > TEXT_MAX);
+    if (this.blockLabel) this.blockLabel.textContent = `Block ${this.activeBlock + 1} of ${this.blocks.length}`;
+    // Tab "empty" dots follow the text live without rebuilding the tab list.
+    this.messageBlockTabs?.querySelectorAll('.block-tab').forEach((tab, i) => {
+      const dot = tab.querySelector('.dot-empty');
+      if (dot) dot.hidden = Boolean(this.blocks[i]?.trim());
+    });
+    this.renderPreview();
+    this.updateKpis();
+    this.renderChecklist();
   }
+
+  // ----- Message blocks -----
+
+  renderBlockTabs() {
+    if (!this.messageBlockTabs) return;
+    this.messageBlockTabs.innerHTML = this.blocks.map((b, i) => `
+      <button type="button" class="block-tab${i === this.activeBlock ? ' active' : ''}" role="tab"
+        aria-selected="${i === this.activeBlock}" data-block="${i}">
+        Block ${i + 1}<span class="dot-empty" title="Empty block" ${b.trim() ? 'hidden' : ''}></span>
+      </button>`).join('');
+    if (this.btnAddBlock) this.btnAddBlock.disabled = this.blocks.length >= MAX_BLOCKS;
+    if (this.btnRemoveBlock) this.btnRemoveBlock.disabled = this.blocks.length <= 1;
+  }
+
+  switchBlock(index) {
+    if (index < 0 || index >= this.blocks.length) return;
+    this.blocks[this.activeBlock] = this.messageTextarea.value || '';
+    this.activeBlock = index;
+    this.messageTextarea.value = this.blocks[index];
+    this.renderBlockTabs();
+    this.refreshComposer();
+    this.messageTextarea.focus();
+  }
+
+  addBlock() {
+    if (this.blocks.length >= MAX_BLOCKS) {
+      this.toast(`Up to ${MAX_BLOCKS} message blocks per campaign.`, 'warn');
+      return;
+    }
+    this.blocks[this.activeBlock] = this.messageTextarea.value || '';
+    this.blocks.push('');
+    this.switchBlock(this.blocks.length - 1);
+    this.saveComposerDraft();
+  }
+
+  removeBlock() {
+    if (this.blocks.length <= 1) return;
+    const current = (this.messageTextarea.value || '').trim();
+    if (current && !confirm(`Delete message block ${this.activeBlock + 1}?`)) return;
+    this.blocks.splice(this.activeBlock, 1);
+    this.activeBlock = Math.min(this.activeBlock, this.blocks.length - 1);
+    this.messageTextarea.value = this.blocks[this.activeBlock];
+    this.renderBlockTabs();
+    this.refreshComposer();
+    this.saveComposerDraft();
+  }
+
+  /** Replace the active block's text (templates, drafts). */
+  setActiveBlockText(text) {
+    this.messageTextarea.value = text || '';
+    this.updateComposerStats();
+    this.saveComposerDraft();
+  }
+
+  // ----- Editing helpers -----
 
   insertTextAtCursor(textarea, textToInsert) {
     const start = textarea.selectionStart;
@@ -721,55 +963,319 @@ class BulkApp {
     textarea.focus();
   }
 
+  /** Wrap the selection in WhatsApp markers; the inner text stays selected so it can be re-wrapped. */
   wrapSelectedText(textarea, symbol) {
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const selected = textarea.value.substring(start, end) || 'text';
-    const wrapped = `${symbol}${selected}${symbol}`;
-    this.insertTextAtCursor(textarea, wrapped);
+    textarea.value = textarea.value.substring(0, start) + symbol + selected + symbol + textarea.value.substring(end);
+    textarea.selectionStart = start + symbol.length;
+    textarea.selectionEnd = start + symbol.length + selected.length;
+    textarea.focus();
     this.updateComposerStats();
+    this.scheduleComposerDraft();
   }
 
-  insertEmoji() {
-    const emojis = ['😊', '🙏', '🔥', '✨', '🚀', '✅', '📦', '🎉', '👋'];
-    const chosen = prompt(`Pick an emoji (or type your own):\n${emojis.join('  ')}`, emojis[0]);
-    if (chosen) {
-      this.insertTextAtCursor(this.messageTextarea, chosen);
-      this.updateComposerStats();
+  handleEditorShortcut(e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const key = e.key.toLowerCase();
+    let symbol = null;
+    if (key === 'b' && !e.shiftKey) symbol = '*';
+    else if (key === 'i' && !e.shiftKey) symbol = '_';
+    else if (key === 'x' && e.shiftKey) symbol = '~';
+    else if (key === 'e' && !e.shiftKey) symbol = '```';
+    if (!symbol) return;
+    e.preventDefault();
+    this.wrapSelectedText(this.messageTextarea, symbol);
+  }
+
+  buildEmojiPicker() {
+    if (!this.emojiPicker) return;
+    const html = Object.entries(EMOJI_SETS).map(([cat, list]) =>
+      `<div class="emoji-cat">${cat}</div>` +
+      list.split(' ').map(e => `<button type="button" data-emoji="${e}" aria-label="${e}">${e}</button>`).join('')
+    ).join('');
+    this.emojiPicker.innerHTML = `<div class="emoji-grid" role="listbox" aria-label="Emoji">${html}</div>`;
+  }
+
+  toggleEmojiPicker(open) {
+    if (!this.emojiPicker) return;
+    const willOpen = open ?? this.emojiPicker.hidden;
+    show(this.emojiPicker, willOpen);
+    this.btnEmoji?.setAttribute('aria-expanded', String(willOpen));
+  }
+
+  insertEmoji(emoji) {
+    this.insertTextAtCursor(this.messageTextarea, emoji);
+    this.updateComposerStats();
+    this.scheduleComposerDraft();
+  }
+
+  // ----- Preview -----
+
+  /** First selected recipient, used for preview values. */
+  getPreviewRecipient() {
+    return this.records.find(r => r.selected && r.isValid) || null;
+  }
+
+  /** Render WhatsApp-formatted text as safe HTML, substituting variables like the backend does. */
+  formatWhatsApp(text, vars) {
+    // Same placeholder rules as src/common/utils/template-render.ts: {{key}} (canonical) or {key}.
+    const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{([a-zA-Z0-9_]+)\}/g;
+    const parts = [];
+    let last = 0;
+    String(text).replace(VAR_RE, (m, k1, k2, offset) => {
+      parts.push(this.escape(text.slice(last, offset)));
+      const key = (k1 || k2).toLowerCase();
+      const value = vars ? vars[key] : undefined;
+      parts.push(value !== undefined && value !== ''
+        ? this.escape(value)
+        : `<span class="var-missing" title="No value for ${this.escape(key)}">${this.escape(m)}</span>`);
+      last = offset + m.length;
+      return m;
+    });
+    parts.push(this.escape(text.slice(last)));
+    let html = parts.join('');
+    html = html.replace(/```([\s\S]+?)```/g, '<pre>$1</pre>');
+    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    html = html.replace(/(^|[\s>(])\*(?!\s)([^*\n]+?)\*(?=$|[\s<.,!?:;)])/gm, '$1<strong>$2</strong>');
+    html = html.replace(/(^|[\s>(])_(?!\s)([^_\n]+?)_(?=$|[\s<.,!?:;)])/gm, '$1<em>$2</em>');
+    html = html.replace(/(^|[\s>(])~(?!\s)([^~\n]+?)~(?=$|[\s<.,!?:;)])/gm, '$1<s>$2</s>');
+    return html;
+  }
+
+  renderPreview() {
+    if (!this.messagePreview) return;
+    const recipient = this.getPreviewRecipient();
+    const vars = recipient
+      ? recipient.variables || { name: recipient.name, number: recipient.number, var1: recipient.var1, var2: recipient.var2, var3: recipient.var3 }
+      : { name: 'Rahul', number: '919876543210', var1: 'ORD-1024', var2: 'Sample', var3: 'Sample' };
+    if (this.previewRecipient) {
+      this.previewRecipient.textContent = recipient ? `As ${recipient.name || recipient.number}` : 'Sample values';
     }
+
+    const config = this.buildMessageConfig();
+    const blocks = CampaignManager.getTextBlocks(config);
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const bubble = (inner) => `<div class="bubble">${inner}<span class="bubble-time">${time}</span></div>`;
+    const out = [];
+
+    if (CampaignManager.hasMediaPayload(config)) {
+      const separate = config.sendSeparateTextMessage !== false;
+      const caption = separate || blocks.length === 0
+        ? (config.media.caption || '')
+        : [config.media.caption, blocks[0]].filter(Boolean).join('\n\n');
+      const label = config.media.filename || (config.media.url ? 'Linked file' : config.type);
+      const mediaIcon = config.type === 'image' ? 'image' : config.type === 'audio' ? 'activity' : 'file';
+      out.push(bubble(`<div class="bubble-media">${icon(mediaIcon, 16)}<span>${this.escape(config.type.toUpperCase())} · ${this.escape(label)}</span></div>${this.formatWhatsApp(caption, vars)}`));
+      (separate ? blocks : blocks.slice(1)).forEach(b => out.push(bubble(this.formatWhatsApp(b, vars))));
+    } else {
+      blocks.forEach(b => out.push(bubble(this.formatWhatsApp(b, vars))));
+    }
+
+    this.messagePreview.innerHTML = out.length
+      ? out.join('')
+      : '<div class="chat-empty">Your message preview appears here</div>';
+  }
+
+  // ----- Campaign summary -----
+
+  /** Unique, valid, selected recipients (one per chat ID), exactly what a send would use. */
+  getSelectedRecipients() {
+    const seen = new Set();
+    return this.records.filter(r => {
+      if (!r.selected || !r.isValid || !r.chatId || seen.has(r.chatId)) return false;
+      seen.add(r.chatId);
+      return true;
+    });
+  }
+
+  updateKpis() {
+    const recipients = this.getSelectedRecipients().length;
+    const config = this.buildMessageConfig();
+    const perRecipient = CampaignManager.itemsPerRecipient(config);
+    const messages = recipients * perRecipient;
+    const batchSize = this.getBatchSize();
+    const recipientsPerBatch = Math.max(1, Math.floor(batchSize / perRecipient));
+    const batches = recipients ? Math.ceil(recipients / recipientsPerBatch) : 0;
+
+    if (this.kpiRecipients) this.kpiRecipients.textContent = recipients.toLocaleString();
+    if (this.kpiMessages) this.kpiMessages.textContent = messages.toLocaleString();
+    if (this.kpiBatches) this.kpiBatches.textContent = batches.toLocaleString();
+    if (this.itemsPerRecipient) this.itemsPerRecipient.textContent = perRecipient;
+
+    if (this.kpiDuration) {
+      if (!messages) {
+        this.kpiDuration.textContent = '—';
+      } else {
+        // Server waits delayBetweenMessages (+0–2 s jitter, ~1 s average) between items; the client
+        // pauses interBatch seconds between batches.
+        const delayMs = Number(this.delaySlider.value) + (this.randomizeDelayCheck.checked ? 1000 : 0);
+        const interBatch = (parseInt(this.interBatchDelaySelect.value, 10) || 30) * 1000;
+        const totalMs = Math.max(0, messages - batches) * delayMs + Math.max(0, batches - 1) * interBatch;
+        this.kpiDuration.textContent = `≈ ${this.formatDuration(totalMs)}`;
+      }
+    }
+  }
+
+  formatDuration(ms) {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s} s`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60);
+    return `${h} h ${m % 60} min`;
+  }
+
+  getBatchSize() {
+    return Math.min(100, Math.max(1, parseInt(this.batchSizeInput.value, 10) || 100));
+  }
+
+  /** Problems that block sending (bad) plus advisories (warn), shared by the checklist and executeCampaign. */
+  getSendIssues() {
+    const issues = [];
+    const session = this.sessions.find(s => s.id === this.currentSessionId);
+    const config = this.buildMessageConfig();
+    const blocks = CampaignManager.getTextBlocks(config);
+    const recipients = this.getSelectedRecipients().length;
+
+    issues.push(session?.status === 'ready'
+      ? { level: 'ok', text: `Sending from ${session.name || session.id}` }
+      : { level: 'bad', text: session ? `Number "${session.name || session.id}" is ${this.statusLabel(session.status)}; it must be ready` : 'Choose a connected WhatsApp number' });
+
+    issues.push(recipients
+      ? { level: 'ok', text: `${recipients.toLocaleString()} recipient${recipients === 1 ? '' : 's'} selected` }
+      : { level: 'bad', text: 'Select at least one valid recipient' });
+
+    const mediaChosen = this.mediaTypeSelect.value !== 'text';
+    const hasMedia = CampaignManager.hasMediaPayload(config);
+    if (mediaChosen && !hasMedia) {
+      issues.push({ level: 'bad', text: 'Upload a file or paste a link, or choose "No attachment"' });
+    } else if (!blocks.length && !hasMedia) {
+      issues.push({ level: 'bad', text: 'Write a message' });
+    } else {
+      issues.push({ level: 'ok', text: `${blocks.length} message block${blocks.length === 1 ? '' : 's'}${hasMedia ? ' + attachment' : ''}` });
+    }
+
+    const tooLong = this.blocks.findIndex(b => b.trim().length > TEXT_MAX);
+    if (tooLong >= 0) issues.push({ level: 'bad', text: `Block ${tooLong + 1} is over ${TEXT_MAX} characters` });
+
+    if (hasMedia) {
+      const separate = config.sendSeparateTextMessage !== false;
+      const caption = separate || !blocks.length ? (config.media.caption || '') : [config.media.caption, blocks[0]].filter(Boolean).join('\n\n');
+      if (caption.length > CAPTION_MAX) {
+        issues.push({ level: 'bad', text: `Caption is ${caption.length}/${CAPTION_MAX} characters; shorten it or send blocks as separate texts` });
+      }
+    }
+
+    const empties = this.blocks.length - this.blocks.filter(b => b.trim()).length;
+    if (empties && this.blocks.length > 1) {
+      issues.push({ level: 'warn', text: `${empties} empty block${empties === 1 ? '' : 's'} will be skipped` });
+    }
+
+    if (this.scheduleDateTimeInput.value) {
+      const at = new Date(this.scheduleDateTimeInput.value).getTime();
+      if (!(at > Date.now())) issues.push({ level: 'warn', text: 'Scheduled time is in the past' });
+    }
+    return issues;
+  }
+
+  renderChecklist() {
+    if (!this.sendChecklist) return;
+    const glyph = { ok: 'check', bad: 'x', warn: 'alert' };
+    this.sendChecklist.innerHTML = this.getSendIssues().map(i =>
+      `<div class="check-item ${i.level}">${icon(glyph[i.level], 15)}<span>${this.escape(i.text)}</span></div>`
+    ).join('');
+  }
+
+  /** Current composer state as a CampaignManager messageConfig. */
+  buildMessageConfig() {
+    const type = this.mediaTypeSelect.value;
+    const caption = (this.mediaCaptionInput.value || '').trim();
+    const urlValue = (this.mediaUrlInput.value || '').trim();
+    let media;
+    if (type !== 'text') {
+      if (this.currentAttachedMedia?.base64) {
+        media = { ...this.currentAttachedMedia, caption: caption || undefined, ptt: this.pttVoiceCheck.checked };
+      } else if (urlValue) {
+        media = { url: urlValue, caption: caption || undefined, ptt: this.pttVoiceCheck.checked };
+      }
+    }
+    const texts = this.blocks.map((b, i) => (i === this.activeBlock ? this.messageTextarea.value : b) || '');
+    return {
+      type,
+      texts,
+      text: texts.find(t => t.trim()) || '',
+      media,
+      sendSeparateTextMessage: this.sendSeparateTextMessageCheck ? this.sendSeparateTextMessageCheck.checked : true,
+    };
+  }
+
+  // ----- Toasts -----
+
+  toast(message, type = 'info', timeout) {
+    if (!this.toastHost) { console.log(message); return; }
+    const glyph = { ok: 'check', bad: 'alert', warn: 'alert', info: 'info' }[type] || 'info';
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.setAttribute('role', type === 'bad' ? 'alert' : 'status');
+    el.innerHTML = `${icon(glyph, 16)}<span></span><button type="button" class="chip-x" aria-label="Dismiss">${icon('x', 13)}</button>`;
+    el.querySelector('span').textContent = message;
+    const close = () => {
+      if (!el.isConnected) return;
+      el.classList.add('leaving');
+      setTimeout(() => el.remove(), 200);
+    };
+    el.querySelector('button').addEventListener('click', close);
+    this.toastHost.appendChild(el);
+    while (this.toastHost.children.length > 4) this.toastHost.firstElementChild.remove();
+    setTimeout(close, timeout ?? (type === 'bad' ? 9000 : 4500));
   }
 
   handleMediaTypeChange() {
     const type = this.mediaTypeSelect.value;
     if (type === 'text') {
-      this.currentAttachedMedia = null;
-      this.mediaDetailsRow.style.display = 'none';
-      this.mediaUrlInput.value = '';
-    } else {
-      this.mediaDetailsRow.style.display = 'flex';
-      this.pttVoiceToggleWrap.style.display = type === 'audio' ? 'inline-flex' : 'none';
+      this.clearMedia();
+      return;
     }
+    show(this.mediaDetailsRow);
+    show(this.pttVoiceToggleWrap, type === 'audio');
+    if (!this.currentAttachedMedia && !this.mediaUrlInput.value.trim()) {
+      this.attachedFileName.textContent = `No ${type} chosen: upload a file or paste a link`;
+    }
+    if (this.currentAttachedMedia) this.currentAttachedMedia.type = type;
+    this.refreshComposer();
   }
 
   handleMediaUrlChange() {
     const url = this.mediaUrlInput.value.trim();
     if (url) {
+      // A link replaces any uploaded file.
+      this.currentAttachedMedia = null;
+      this.mediaFileInput.value = '';
       if (this.mediaTypeSelect.value === 'text') {
-        this.mediaTypeSelect.value = 'image';
+        this.mediaTypeSelect.value = /\.(mp4|mov|webm|3gp)(\?|$)/i.test(url) ? 'video'
+          : /\.(mp3|ogg|opus|m4a|wav|aac)(\?|$)/i.test(url) ? 'audio'
+          : /\.(pdf|docx?|xlsx?|pptx?|csv|txt|zip)(\?|$)/i.test(url) ? 'document' : 'image';
       }
-      this.currentAttachedMedia = {
-        type: this.mediaTypeSelect.value,
-        url,
-        caption: this.mediaCaptionInput.value,
-      };
-      this.mediaDetailsRow.style.display = 'flex';
-      this.attachedFileName.textContent = `Remote URL: ${url.substring(0, 40)}...`;
+      show(this.mediaDetailsRow);
+      show(this.pttVoiceToggleWrap, this.mediaTypeSelect.value === 'audio');
+      this.attachedFileName.textContent = /^https?:\/\//i.test(url) ? url : `Link must start with https:// (${url})`;
+    } else if (!this.currentAttachedMedia && this.mediaTypeSelect.value !== 'text') {
+      this.attachedFileName.textContent = 'No file selected';
     }
+    this.refreshComposer();
   }
 
   async handleMediaFileUpload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      this.toast(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB. Upload files up to ${MAX_UPLOAD_BYTES / 1048576} MB, or paste a public https:// link for larger files.`, 'bad');
+      this.mediaFileInput.value = '';
+      return;
+    }
 
     let mediaType = 'document';
     if (file.type.startsWith('image/')) mediaType = 'image';
@@ -777,42 +1283,65 @@ class BulkApp {
     else if (file.type.startsWith('audio/')) mediaType = 'audio';
 
     this.mediaTypeSelect.value = mediaType;
-    this.mediaDetailsRow.style.display = 'flex';
-    this.attachedFileName.textContent = `Local File: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    this.pttVoiceToggleWrap.style.display = mediaType === 'audio' ? 'inline-flex' : 'none';
+    this.mediaUrlInput.value = '';
+    show(this.mediaDetailsRow);
+    this.attachedFileName.textContent = `Reading ${file.name}…`;
+    show(this.pttVoiceToggleWrap, mediaType === 'audio');
 
     // Convert to Base64
     const reader = new FileReader();
     reader.onload = () => {
-      const base64Data = reader.result.split(',')[1];
+      const base64Data = String(reader.result).split(',')[1];
       this.currentAttachedMedia = {
         type: mediaType,
         base64: base64Data,
         mimetype: file.type || 'application/octet-stream',
         filename: file.name,
-        caption: this.mediaCaptionInput.value,
-        ptt: this.pttVoiceCheck.checked,
       };
+      const size = file.size >= 1048576 ? `${(file.size / 1048576).toFixed(1)} MB` : `${(file.size / 1024).toFixed(1)} KB`;
+      this.attachedFileName.textContent = `${file.name} · ${size}`;
+      this.refreshComposer();
+    };
+    reader.onerror = () => {
+      this.toast(`Could not read "${file.name}".`, 'bad');
+      this.clearMedia();
     };
     reader.readAsDataURL(file);
   }
 
+  clearMedia() {
+    this.currentAttachedMedia = null;
+    this.mediaFileInput.value = '';
+    this.mediaUrlInput.value = '';
+    this.mediaCaptionInput.value = '';
+    this.pttVoiceCheck.checked = false;
+    this.mediaTypeSelect.value = 'text';
+    this.attachedFileName.textContent = 'No file selected';
+    hide(this.mediaDetailsRow);
+    hide(this.pttVoiceToggleWrap);
+    this.refreshComposer();
+  }
+
   updateDelayDisplay(ms) {
-    const seconds = (Number(ms) / 1000).toFixed(1);
-    this.delayDisplay.textContent = `${seconds}s (${ms}ms)`;
+    const value = Number(ms);
+    this.delayDisplay.textContent = `${(value / 1000).toFixed(1)} s`;
+    document.querySelectorAll('.speed-btn').forEach(b => {
+      b.classList.toggle('active', Number(b.dataset.delay) === value);
+    });
+    this.updateKpis();
   }
 
   // ========== Execution & Live Monitoring ==========
 
   async executeCampaign(isScheduled = false) {
     if (!this.currentSessionId) {
-      alert('Please select a connected WhatsApp session first.');
+      this.toast('Please select a connected WhatsApp session first.', 'warn');
       return;
     }
 
     const activeSession = this.sessions.find(s => s.id === this.currentSessionId);
     if (activeSession && activeSession.status !== 'ready') {
-      const confirmOpen = confirm(`The selected session "${activeSession.name || this.currentSessionId}" is currently "${activeSession.status}". It must be "ready" to dispatch WhatsApp messages.\n\nWould you like to open the Session Manager to connect or scan QR now?`);
+      const confirmOpen = confirm(`The selected number "${activeSession.name || this.currentSessionId}" is "${activeSession.status}". It must be ready to send WhatsApp messages.\n\nOpen Manage numbers to connect it now?`);
       if (confirmOpen) {
         this.openSessionManagerModal();
         this.displaySessionQr(this.currentSessionId, activeSession.name);
@@ -820,50 +1349,39 @@ class BulkApp {
       return;
     }
 
+    this.blocks[this.activeBlock] = this.messageTextarea.value || '';
+    const blocking = this.getSendIssues().filter(i => i.level === 'bad');
+    if (blocking.length) {
+      this.renderChecklist();
+      this.toast(blocking[0].text, 'bad');
+      return;
+    }
+
+    const url = (this.mediaUrlInput.value || '').trim();
+    if (this.mediaTypeSelect.value !== 'text' && !this.currentAttachedMedia && url && !/^https?:\/\//i.test(url)) {
+      this.toast('The attachment link must start with https://', 'bad');
+      return;
+    }
+
     // Final duplicate guard: one message set per chat ID, whatever the selection state.
-    const seenChatIds = new Set();
-    const selectedRecipients = this.records.filter(r => {
-      if (!r.selected || !r.isValid || !r.chatId || seenChatIds.has(r.chatId)) return false;
-      seenChatIds.add(r.chatId);
-      return true;
-    });
-    if (selectedRecipients.length === 0) {
-      alert('Please select at least one valid recipient from the contacts list.');
-      return;
+    const selectedRecipients = this.getSelectedRecipients();
+    const messageConfig = this.buildMessageConfig();
+
+    let scheduleAt = null;
+    if (isScheduled) {
+      if (!this.scheduleDateTimeInput.value) {
+        this.toast('Pick a date and time to schedule the campaign.', 'warn');
+        this.scheduleDateTimeInput.focus();
+        return;
+      }
+      scheduleAt = new Date(this.scheduleDateTimeInput.value);
+      if (!(scheduleAt.getTime() > Date.now())) {
+        this.toast('The scheduled time must be in the future.', 'bad');
+        return;
+      }
     }
 
-    const messageText = this.messageTextarea.value.trim();
-    const mediaType = this.mediaTypeSelect.value;
-    if (mediaType === 'text' && !messageText) {
-      alert('Please enter a message text before sending.');
-      return;
-    }
-
-    const mediaCaption = this.mediaCaptionInput.value.trim();
-    const sendSeparateTextMessage = this.sendSeparateTextMessageCheck ? this.sendSeparateTextMessageCheck.checked : true;
-
-    let mediaObj = undefined;
-    if (this.currentAttachedMedia) {
-      mediaObj = {
-        ...this.currentAttachedMedia,
-        caption: mediaCaption || undefined,
-        ptt: this.pttVoiceCheck.checked,
-      };
-    } else if (mediaType !== 'text' && this.mediaUrlInput.value.trim()) {
-      mediaObj = {
-        url: this.mediaUrlInput.value.trim(),
-        caption: mediaCaption || undefined,
-      };
-    }
-
-    const messageConfig = {
-      type: mediaType,
-      text: messageText,
-      media: mediaObj,
-      sendSeparateTextMessage,
-    };
-
-    const batchSize = parseInt(this.batchSizeInput.value, 10) || 100;
+    const batchSize = this.getBatchSize();
     const options = {
       delayBetweenMessages: parseInt(this.delaySlider.value, 10) || 5000,
       randomizeDelay: this.randomizeDelayCheck.checked,
@@ -875,6 +1393,13 @@ class BulkApp {
     const currentSession = this.sessions.find(s => s.id === this.currentSessionId);
     const sessionName = currentSession?.name || currentSession?.id || this.currentSessionId;
     const campaignName = customTitle || `Bulk Campaign ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    if (this.campaignManager.state === 'scheduled') {
+      if (!confirm('A campaign is already scheduled. Replace it with this one?')) return;
+      this.replacingSchedule = true;
+      this.campaignManager.cancelSchedule();
+      this.replacingSchedule = false;
+    }
 
     try {
       this.campaignManager.setupCampaign({
@@ -888,21 +1413,19 @@ class BulkApp {
         interBatchDelaySeconds: interBatchDelay,
       });
 
+      hide(this.btnRetryFailed);
       if (isScheduled) {
-        const scheduleVal = this.scheduleDateTimeInput.value;
-        if (!scheduleVal) {
-          alert('Please pick a date and time to schedule the campaign.');
-          return;
-        }
-        this.campaignManager.schedule(new Date(scheduleVal));
+        this.campaignManager.schedule(scheduleAt);
+        this.toast(`Scheduled ${selectedRecipients.length.toLocaleString()} recipient(s) for ${scheduleAt.toLocaleString()}. Keep this tab open.`, 'ok');
       } else {
         this.btnSendNow.disabled = true;
         this.btnScheduleSend.disabled = true;
         this.toggleMonitorDrawer(true);
+        this.liveMonitorDrawer?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         await this.campaignManager.start();
       }
     } catch (err) {
-      alert(`Could not start campaign: ${err.message}`);
+      this.toast(`Could not start campaign: ${err.message}`, 'bad');
       this.btnSendNow.disabled = false;
       this.btnScheduleSend.disabled = false;
     }
@@ -913,45 +1436,95 @@ class BulkApp {
     const isCollapsed = this.liveMonitorDrawer.classList.contains('collapsed');
     const shouldOpen = forceOpen !== undefined ? forceOpen : isCollapsed;
 
-    if (shouldOpen) {
-      this.liveMonitorDrawer.classList.remove('collapsed');
-      if (this.toggleMonitorIcon) this.toggleMonitorIcon.textContent = '▼';
-      if (this.toggleMonitorText) this.toggleMonitorText.textContent = 'Hide Logs';
-    } else {
-      this.liveMonitorDrawer.classList.add('collapsed');
-      if (this.toggleMonitorIcon) this.toggleMonitorIcon.textContent = '▲';
+    // The chevron rotates via `.monitor.collapsed .chev` in styles.css.
+    this.liveMonitorDrawer.classList.toggle('collapsed', !shouldOpen);
+    this.btnToggleMonitor?.setAttribute('aria-expanded', String(shouldOpen));
+    if (this.toggleMonitorText) {
       const count = this.campaignManager?.allResults?.length || 0;
-      if (this.toggleMonitorText) this.toggleMonitorText.textContent = `Logs (${count})`;
+      this.toggleMonitorText.textContent = shouldOpen ? 'Hide log' : `Show log${count ? ` (${count})` : ''}`;
     }
   }
 
-  handleCampaignUpdate(event, data) {
-    if (event === 'campaign_finished' && this.campaignManager.haltReason) {
-      window.alert(this.campaignManager.haltReason);
-    }
-    const { state, stats } = data;
+  /** Live countdown under the schedule input while a campaign is waiting to start. */
+  startScheduleCountdown() {
+    clearInterval(this.scheduleCountdownTimer);
+    const tick = () => {
+      const target = this.campaignManager.scheduleTargetTime;
+      if (!target || this.campaignManager.state !== 'scheduled') {
+        this.stopScheduleCountdown();
+        return;
+      }
+      const left = Math.max(0, target - Date.now());
+      const s = Math.floor(left / 1000);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const text = h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+      if (this.scheduleCountdownText) this.scheduleCountdownText.textContent = text;
+      if (this.monitorSubText) this.monitorSubText.textContent = `Starts ${new Date(target).toLocaleString()} (in ${text})`;
+    };
+    show(this.scheduleCountdownDisplay);
+    tick();
+    this.scheduleCountdownTimer = setInterval(tick, 1000);
+  }
 
-    // Status text & UI buttons
-    this.monitorStatusText.textContent = state.toUpperCase();
+  stopScheduleCountdown() {
+    clearInterval(this.scheduleCountdownTimer);
+    this.scheduleCountdownTimer = null;
+    hide(this.scheduleCountdownDisplay);
+  }
+
+  handleCampaignUpdate(event, data) {
+    const { state, stats } = data;
+    const cm = this.campaignManager;
+
+    if (event === 'campaign_finished') {
+      if (cm.haltReason) {
+        this.toast(cm.haltReason, 'bad', 15000);
+      } else if (state === 'completed') {
+        this.toast(`Campaign finished: ${stats.sentCount} sent, ${stats.failedCount} failed.`, stats.failedCount ? 'warn' : 'ok');
+      }
+    } else if (event === 'cancelled') {
+      this.toast('Campaign cancelled. Messages already sent cannot be recalled.', 'warn');
+    } else if (event === 'schedule_cancelled' && !this.replacingSchedule) {
+      this.toast('Scheduled campaign cancelled. Nothing was sent.', 'info');
+    }
+
+    // Status text & UI buttons (label casing comes from CSS)
+    this.monitorStatusText.textContent = state === 'idle' ? 'Idle' : state;
     if (this.monitorStatusText.dataset) this.monitorStatusText.dataset.state = state;
+    if (this.monitorSubText) {
+      if (event === 'inter_batch_delay') {
+        this.monitorSubText.textContent = `Pausing ${data.seconds} s before batch ${data.nextBatch} of ${stats.totalBatches}`;
+      } else if (state === 'running') {
+        this.monitorSubText.textContent = `${cm.campaignName} · batch ${stats.currentBatchIndex + 1} of ${stats.totalBatches}`;
+      } else if (state === 'completed' || state === 'cancelled') {
+        this.monitorSubText.textContent = `${cm.campaignName} · ${stats.sentCount} sent, ${stats.failedCount} failed`;
+      } else if (state === 'idle' && event !== 'setup') {
+        this.monitorSubText.textContent = 'No campaign running';
+      }
+    }
+
+    if (state === 'scheduled') this.startScheduleCountdown();
+    else this.stopScheduleCountdown();
+
     if (state === 'scheduled') {
       // Allow cancelling a scheduled campaign (previously there was no way to stop it).
-      this.btnCancelBatch.style.display = 'inline-block';
+      show(this.btnCancelBatch);
       this.btnSendNow.disabled = false;
       this.btnScheduleSend.disabled = false;
     } else if (state === 'running') {
-      this.btnCancelBatch.style.display = 'inline-block';
+      show(this.btnCancelBatch);
       this.btnSendNow.disabled = true;
       this.btnScheduleSend.disabled = true;
     } else {
-      this.btnCancelBatch.style.display = 'none';
+      hide(this.btnCancelBatch);
       this.btnSendNow.disabled = false;
       this.btnScheduleSend.disabled = false;
     }
 
     if (state === 'completed' || state === 'cancelled') {
       if (stats.failedCount > 0) {
-        this.btnRetryFailed.style.display = 'inline-block';
+        show(this.btnRetryFailed);
       }
       this.updateReportsBadge();
     }
@@ -979,58 +1552,54 @@ class BulkApp {
 
   renderMonitorResults(results) {
     if (this.liveMonitorDrawer?.classList.contains('collapsed') && this.toggleMonitorText) {
-      this.toggleMonitorText.textContent = `Logs (${results.length})`;
+      this.toggleMonitorText.textContent = `Show log (${results.length})`;
     }
 
-    const tbody = this.monitorResultsBody;
-    tbody.innerHTML = '';
-
-    // Show most recent 50 results
+    // Most recent 50 results first; # is the position in the whole campaign.
+    const total = results.length;
+    if (!total) {
+      this.monitorResultsBody.innerHTML = `<tr><td colspan="6" class="table-empty">${icon('inbox', 28)}<strong>No deliveries yet</strong>Results appear here as each message is sent.</td></tr>`;
+      return;
+    }
     const slice = results.slice(-50).reverse();
+    const tone = { sent: 'ok', failed: 'bad', pending: 'info', processing: 'info', cancelled: 'warn' };
 
-    slice.forEach((r, idx) => {
-      const tr = document.createElement('tr');
-      const isSent = r.status === 'sent';
-      const badge = isSent
-        ? `<span class="badge badge-sent">Sent</span>`
-        : `<span class="badge badge-failed">Failed</span>`;
-
+    this.monitorResultsBody.innerHTML = slice.map((r, idx) => {
+      const status = r.status || 'pending';
+      const isSent = status === 'sent';
       const detail = isSent
-        ? `<span style="font-family: var(--font-mono); font-size: 11px;">${this.escape(r.messageId || 'Success')}</span>`
-        : `<span style="color: #ef4444; font-size: 11px;">${this.escape(r.error?.message || r.error?.code || 'Send Failed')}</span>`;
-
+        ? `<span class="mono">${this.escape(r.messageId || 'Sent')}</span>`
+        : status === 'failed'
+          ? `<span class="text-bad">${this.escape(r.error?.message || r.error?.code || 'Send failed')}</span>`
+          : '<span class="cell-muted">—</span>';
       const isMedia = r.type && r.type !== 'text';
-      const typeBadge = isMedia
-        ? `<span class="badge" style="background: #e0f2fe; color: #0369a1; font-size: 9px; padding: 1px 4px; margin-right: 4px;">${this.escape((r.type || 'MEDIA').toUpperCase())}</span>`
-        : `<span class="badge" style="background: #f1f5f9; color: #475569; font-size: 9px; padding: 1px 4px; margin-right: 4px;">TEXT</span>`;
-
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td><strong>${this.escape(r.chatId)}</strong></td>
-        <td>${badge}</td>
-        <td style="max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #1e293b;" title="${this.escape(r.content || '')}">
-          ${typeBadge}<span>${this.escape(r.content || '—')}</span>
-        </td>
-        <td>${detail}</td>
-        <td>${r.sentAt ? new Date(r.sentAt).toLocaleTimeString() : '—'}</td>
-        <td style="font-size: 10px; color: #64748b;">${this.escape(r.batchId || '')}</td>
-      `;
-      tbody.appendChild(tr);
-    });
+      const typeTag = `<span class="type-tag${isMedia ? ' media' : ''}">${this.escape((r.type || 'text').toUpperCase())}</span>`;
+      const recipient = String(r.chatId || '').replace(/@c\.us$/, '');
+      return `<tr>
+        <td class="col-num">${total - idx}</td>
+        <td><strong class="mono">${this.escape(recipient)}</strong></td>
+        <td class="col-status"><span class="status-badge sm ${tone[status] || ''}">${this.escape(status)}</span></td>
+        <td class="col-content"><div class="cell-ellipsis" title="${this.escape(r.content || '')}">${typeTag}${this.escape(r.content || '—')}</div></td>
+        <td class="col-detail"><div class="cell-ellipsis">${detail}</div></td>
+        <td class="col-time">${r.sentAt ? new Date(r.sentAt).toLocaleTimeString() : '—'}</td>
+      </tr>`;
+    }).join('');
   }
 
   retryFailedRecipients() {
     const failed = this.campaignManager.getFailedRecipients();
     if (failed.length === 0) {
-      alert('No failed recipients to retry.');
+      this.toast('No failed recipients to retry.', 'warn');
       return;
     }
 
     this.records = failed;
+    hide(this.duplicateBanner);
     this.renderContactsTable();
     this.updateStats();
-    this.btnRetryFailed.style.display = 'none';
-    alert(`Loaded ${failed.length} failed recipient(s) for re-sending. Click "Send Now" to retry.`);
+    this.saveCurrentDraft();
+    hide(this.btnRetryFailed);
+    this.toast(`Loaded ${failed.length} failed recipient(s). Review the message, then choose "Send now" to retry.`, 'ok');
   }
 
   exportToExcel(data, fileName = 'export.xlsx', sheetName = 'Data') {
@@ -1046,7 +1615,7 @@ class BulkApp {
 
   exportContactsExcel() {
     if (!this.records || this.records.length === 0) {
-      alert('No contacts available to export. Import contacts or click Sample first.');
+      this.toast('No contacts available to export. Import contacts or click Sample first.', 'warn');
       return;
     }
 
@@ -1064,7 +1633,7 @@ class BulkApp {
 
     const success = this.exportToExcel(exportData, `openwa_contacts_${Date.now()}.xlsx`, 'Contacts');
     if (!success) {
-      alert('Excel export library (XLSX) is not ready.');
+      this.toast('Excel export library (XLSX) is not ready.', 'bad');
     }
   }
 
@@ -1087,7 +1656,7 @@ class BulkApp {
         }
         return;
       }
-      alert('No campaign results or contacts available to export yet.');
+      this.toast('No campaign results or contacts available to export yet.', 'warn');
       return;
     }
 
@@ -1127,7 +1696,7 @@ class BulkApp {
         }
         return;
       }
-      alert('No campaign results available to export yet.');
+      this.toast('No campaign results available to export yet.', 'warn');
       return;
     }
 
@@ -1146,41 +1715,41 @@ class BulkApp {
 
   async openTemplatesModal() {
     if (!this.currentSessionId) {
-      alert('Connect a WhatsApp session first.');
+      this.toast('Connect a WhatsApp session first.', 'warn');
       return;
     }
 
-    this.modalTemplates.style.display = 'grid';
-    this.createTemplateForm.style.display = 'none';
-    this.templateTableBody.innerHTML = '<tr><td colspan="4">Loading templates...</td></tr>';
+    show(this.modalTemplates);
+    hide(this.createTemplateForm);
+    this.templateTableBody.innerHTML = `<tr><td colspan="3" class="table-empty"><span class="spinner"></span> Loading templates…</td></tr>`;
 
     try {
       const templates = await this.api.getTemplates(this.currentSessionId);
       if (!Array.isArray(templates) || templates.length === 0) {
-        this.templateTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">No templates found on this session.</td></tr>';
+        this.templateTableBody.innerHTML = `<tr><td colspan="3" class="table-empty">${icon('file', 26)}<strong>No templates yet</strong>Save the current block or create a new one.</td></tr>`;
         return;
       }
 
       this.templateTableBody.innerHTML = '';
       templates.forEach(t => {
         const tr = document.createElement('tr');
+        const extras = [t.header, t.footer].filter(Boolean).join(' · ');
         tr.innerHTML = `
           <td><strong>${this.escape(t.name)}</strong></td>
-          <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${this.escape(t.body)}</td>
-          <td style="color: #64748b; font-size: 11px;">${this.escape(t.header || '—')} / ${this.escape(t.footer || '—')}</td>
-          <td><button class="btn btn-sm btn-primary" data-use="${t.id}">Use</button></td>
+          <td><div class="cell-ellipsis" title="${this.escape(t.body)}">${this.escape(t.body)}</div>${extras ? `<span class="cell-sub">${this.escape(extras)}</span>` : ''}</td>
+          <td class="col-action"><button class="btn btn-sm btn-primary" data-use>Use</button></td>
         `;
 
         tr.querySelector('[data-use]').addEventListener('click', () => {
-          this.messageTextarea.value = t.body;
-          this.updateComposerStats();
-          this.modalTemplates.style.display = 'none';
+          this.setActiveBlockText(t.body);
+          hide(this.modalTemplates);
+          this.toast(`Template "${t.name}" placed in block ${this.activeBlock + 1}.`, 'ok');
         });
 
         this.templateTableBody.appendChild(tr);
       });
     } catch (err) {
-      this.templateTableBody.innerHTML = `<tr><td colspan="4" style="color: red;">Error: ${this.escape(err.message)}</td></tr>`;
+      this.templateTableBody.innerHTML = `<tr><td colspan="3" class="table-empty error">Could not load templates: ${this.escape(err.message)}</td></tr>`;
     }
   }
 
@@ -1188,7 +1757,7 @@ class BulkApp {
     const name = this.newTemplateName.value.trim();
     const body = this.newTemplateBody.value.trim();
     if (!name || !body) {
-      alert('Template name and body are required.');
+      this.toast('Template name and body are required.', 'warn');
       return;
     }
 
@@ -1196,10 +1765,10 @@ class BulkApp {
       await this.api.createTemplate(this.currentSessionId, { name, body });
       this.newTemplateName.value = '';
       this.newTemplateBody.value = '';
-      this.createTemplateForm.style.display = 'none';
+      hide(this.createTemplateForm);
       await this.openTemplatesModal();
     } catch (err) {
-      alert(`Could not create template: ${err.message}`);
+      this.toast(`Could not create template: ${err.message}`, 'bad');
     }
   }
 
@@ -1207,65 +1776,101 @@ class BulkApp {
 
   async openAddressbookModal() {
     if (!this.currentSessionId) {
-      alert('Connect a WhatsApp session first.');
+      this.toast('Connect a WhatsApp session first.', 'warn');
       return;
     }
-    this.modalAddressbook.style.display = 'grid';
+    show(this.modalAddressbook);
     this.loadSessionContacts();
   }
 
+  setAddressbookMode(mode) {
+    this.addressbookMode = mode;
+    this.btnTabLoadContacts.classList.toggle('active', mode === 'contacts');
+    this.btnTabLoadGroups.classList.toggle('active', mode === 'groups');
+    if (this.addressbookSearchInput) this.addressbookSearchInput.value = '';
+  }
+
+  renderAddressbookRows(rows) {
+    this.addressbookTableBody.innerHTML = rows.map(r => `
+      <tr data-search="${this.escape(`${r.name} ${r.id}`.toLowerCase())}">
+        <td class="col-check"><input type="checkbox" ${r.attr}="${this.escape(r.value)}" data-name="${this.escape(r.name)}" aria-label="Select ${this.escape(r.name || r.id)}" checked /></td>
+        <td><strong>${this.escape(r.name || '—')}</strong></td>
+        <td class="mono">${this.escape(r.id)}</td>
+      </tr>`).join('');
+    if (this.addressbookSelectAll) this.addressbookSelectAll.checked = true;
+    this.updateAddressbookCount();
+  }
+
+  addressbookMessage(html, isError = false) {
+    this.addressbookTableBody.innerHTML = `<tr><td colspan="3" class="table-empty${isError ? ' error' : ''}">${html}</td></tr>`;
+    this.updateAddressbookCount();
+  }
+
   async loadSessionContacts() {
-    this.addressbookTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Loading contacts...</td></tr>';
+    this.setAddressbookMode('contacts');
+    this.addressbookMessage('<span class="spinner"></span> Loading contacts…');
     try {
       const contacts = await this.api.getContacts(this.currentSessionId, 500);
       if (!Array.isArray(contacts) || contacts.length === 0) {
-        this.addressbookTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">No contacts found in session addressbook.</td></tr>';
+        this.addressbookMessage(`${icon('users', 26)}<strong>No contacts found</strong>This number's address book is empty.`);
         return;
       }
-
-      this.addressbookTableBody.innerHTML = '';
-      contacts.forEach(c => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><input type="checkbox" data-num="${c.number}" data-name="${c.name || c.pushName || ''}" checked /></td>
-          <td><strong>${this.escape(c.name || c.pushName || '—')}</strong></td>
-          <td>${this.escape(c.number || c.id)}</td>
-        `;
-        this.addressbookTableBody.appendChild(tr);
-      });
+      this.renderAddressbookRows(contacts.filter(c => c.number || c.id).map(c => ({
+        attr: 'data-num',
+        value: c.number || String(c.id || '').replace(/@.*$/, ''),
+        name: c.name || c.pushName || '',
+        id: c.number || c.id,
+      })));
     } catch (err) {
-      this.addressbookTableBody.innerHTML = `<tr><td colspan="3" style="color: red;">Error: ${this.escape(err.message)}</td></tr>`;
+      this.addressbookMessage(`Could not load contacts: ${this.escape(err.message)}`, true);
     }
   }
 
   async loadSessionGroups() {
-    this.addressbookTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Loading groups...</td></tr>';
+    this.setAddressbookMode('groups');
+    this.addressbookMessage('<span class="spinner"></span> Loading groups…');
     try {
       const groups = await this.api.getGroups(this.currentSessionId, 100);
       if (!Array.isArray(groups) || groups.length === 0) {
-        this.addressbookTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">No groups found for this session.</td></tr>';
+        this.addressbookMessage(`${icon('group', 26)}<strong>No groups found</strong>This number is not in any groups.`);
         return;
       }
-
-      this.addressbookTableBody.innerHTML = '';
-      groups.forEach(g => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><input type="checkbox" data-group-id="${g.id}" data-name="${g.name || ''}" checked /></td>
-          <td><strong>${this.escape(g.name || 'Untitled Group')}</strong></td>
-          <td style="font-size: 11px; color: #64748b;">${this.escape(g.id)}</td>
-        `;
-        this.addressbookTableBody.appendChild(tr);
-      });
+      this.renderAddressbookRows(groups.map(g => ({
+        attr: 'data-group-id',
+        value: g.id,
+        name: g.name || 'Untitled group',
+        id: g.id,
+      })));
     } catch (err) {
-      this.addressbookTableBody.innerHTML = `<tr><td colspan="3" style="color: red;">Error: ${this.escape(err.message)}</td></tr>`;
+      this.addressbookMessage(`Could not load groups: ${this.escape(err.message)}`, true);
     }
+  }
+
+  filterAddressbook() {
+    const q = (this.addressbookSearchInput?.value || '').toLowerCase().trim();
+    this.addressbookTableBody.querySelectorAll('tr[data-search]').forEach(tr => {
+      tr.hidden = Boolean(q) && !tr.dataset.search.includes(q);
+    });
+    this.updateAddressbookCount();
+  }
+
+  updateAddressbookCount() {
+    const boxes = [...this.addressbookTableBody.querySelectorAll('input[type="checkbox"]')];
+    const checked = boxes.filter(cb => cb.checked).length;
+    if (this.addressbookSelectedCount) this.addressbookSelectedCount.textContent = `${checked} of ${boxes.length} selected`;
+    const visible = boxes.filter(cb => !cb.closest('tr').hidden);
+    if (this.addressbookSelectAll) {
+      const visibleChecked = visible.filter(cb => cb.checked).length;
+      this.addressbookSelectAll.checked = visible.length > 0 && visibleChecked === visible.length;
+      this.addressbookSelectAll.indeterminate = visibleChecked > 0 && visibleChecked < visible.length;
+    }
+    this.btnImportSelectedAddressbook.disabled = checked === 0;
   }
 
   importSelectedAddressbook() {
     const checked = this.addressbookTableBody.querySelectorAll('input[type="checkbox"]:checked');
     if (checked.length === 0) {
-      alert('Please check at least one contact or group.');
+      this.toast('Tick at least one contact or group.', 'warn');
       return;
     }
 
@@ -1302,13 +1907,14 @@ class BulkApp {
     this.saveCurrentDraft();
     this.renderContactsTable();
     this.updateStats();
-    this.modalAddressbook.style.display = 'none';
+    hide(this.modalAddressbook);
+    this.toast(`Added ${processed.records.length} ${this.addressbookMode === 'groups' ? 'group(s)' : 'contact(s)'} to recipients.`, 'ok');
   }
 
   // ========== Statistics & Audit Modal ==========
 
   async openStatsModal() {
-    this.modalStats.style.display = 'grid';
+    show(this.modalStats);
     try {
       const overview = await this.api.getStatsOverview();
       this.gwStatSent.textContent = overview.messages?.sent || 0;
@@ -1321,22 +1927,20 @@ class BulkApp {
       this.auditTableBody.innerHTML = '';
 
       if (items.length === 0) {
-        this.auditTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No audit logs found.</td></tr>';
+        this.auditTableBody.innerHTML = `<tr><td colspan="4" class="table-empty">${icon('shield', 26)}<strong>No audit entries</strong></td></tr>`;
         return;
       }
 
-      items.forEach(log => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
+      const tone = { error: 'bad', critical: 'bad', warn: 'warn', warning: 'warn', info: 'info' };
+      this.auditTableBody.innerHTML = items.map(log => `<tr>
           <td><strong>${this.escape(log.action || '—')}</strong></td>
-          <td><span class="badge ${log.severity === 'error' ? 'badge-failed' : 'badge-valid'}">${this.escape(log.severity || 'info')}</span></td>
-          <td style="font-size: 11px; color: #64748b;">${this.escape(log.sessionId || 'Global')}</td>
-          <td>${log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : '—'}</td>
-        `;
-        this.auditTableBody.appendChild(tr);
-      });
+          <td class="col-status"><span class="status-badge sm ${tone[log.severity] || 'info'}">${this.escape(log.severity || 'info')}</span></td>
+          <td class="cell-muted mono">${this.escape(log.sessionId || 'Global')}</td>
+          <td class="col-time">${log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
+        </tr>`).join('');
     } catch (err) {
       console.warn('Stats fetch error:', err.message);
+      this.auditTableBody.innerHTML = `<tr><td colspan="4" class="table-empty error">Could not load analytics: ${this.escape(err.message)}</td></tr>`;
     }
   }
 
@@ -1348,18 +1952,18 @@ class BulkApp {
       url = '/api';
     }
     const key = this.apiKeyInput.value.trim();
-    this.apiTestResult.textContent = 'Testing connection...';
-    this.apiTestResult.style.color = '#0284c7';
+    this.apiTestResult.textContent = 'Testing connection…';
+    this.apiTestResult.className = 'test-result info';
 
     try {
       const tempApi = new OpenWaApiService(url);
       if (key) tempApi.setApiKey(key);
       const sessions = await tempApi.getSessions();
-      this.apiTestResult.textContent = `Connected successfully! Found ${Array.isArray(sessions) ? sessions.length : 0} session(s).`;
-      this.apiTestResult.style.color = '#16a34a';
+      this.apiTestResult.textContent = `Connected. Found ${Array.isArray(sessions) ? sessions.length : 0} number(s).`;
+      this.apiTestResult.className = 'test-result ok';
     } catch (err) {
       this.apiTestResult.textContent = `Connection failed: ${err.message}`;
-      this.apiTestResult.style.color = '#ef4444';
+      this.apiTestResult.className = 'test-result bad';
     }
   }
 
@@ -1373,7 +1977,7 @@ class BulkApp {
     if (key) {
       this.api.setApiKey(key);
     }
-    this.modalApiSettings.style.display = 'none';
+    hide(this.modalApiSettings);
     this.initSession();
   }
 
@@ -1384,19 +1988,19 @@ class BulkApp {
       this.sessionStatusPill.textContent = 'Refreshing...';
     }
     await this.initSession();
-    if (this.modalSessionManager && this.modalSessionManager.style.display !== 'none') {
+    if (this.modalSessionManager && !this.modalSessionManager.hidden) {
       await this.loadSessionManagerTable();
     }
     if (showToast) {
       const active = this.sessions.find(s => s.id === this.currentSessionId);
-      alert(`Sessions refreshed. Active session is "${active?.name || this.currentSessionId || 'None'}" (${active?.status || 'unknown'}).`);
+      this.toast(`Sessions refreshed. Active session is "${active?.name || this.currentSessionId || 'None'}" (${active?.status || 'unknown'}).`, 'info');
     }
   }
 
   async openSessionManagerModal() {
-    this.modalSessionManager.style.display = 'grid';
+    show(this.modalSessionManager);
     if (this.createSessionMessage) {
-      this.createSessionMessage.style.display = 'none';
+      hide(this.createSessionMessage);
     }
     if (this.activeSessionFooterDisplay) {
       const active = this.sessions.find(s => s.id === this.currentSessionId);
@@ -1412,7 +2016,7 @@ class BulkApp {
       tbody.innerHTML = '';
 
       if (!Array.isArray(this.sessions) || this.sessions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 14px;">No WhatsApp sessions created yet. Create one above to get started!</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="5" class="table-empty">${icon('phone', 26)}<strong>No numbers yet</strong>Create one above, then scan its QR code.</td></tr>`;
         return;
       }
 
@@ -1420,50 +2024,34 @@ class BulkApp {
         const tr = document.createElement('tr');
         const isActive = s.id === this.currentSessionId;
         const isReady = s.status === 'ready';
+        const label = this.escape(s.name || s.id);
 
-        let statusBadgeClass = 'badge-stopped';
-        if (isReady) statusBadgeClass = 'badge-ready';
-        else if (s.status === 'qr_ready') statusBadgeClass = 'badge-qr-ready';
-        else if (s.status === 'authenticating' || s.status === 'initializing') statusBadgeClass = 'badge-auth';
-        else if (s.status === 'failed') statusBadgeClass = 'badge-failed';
-
-        const phoneDisplay = s.phone ? `<span style="font-family: var(--font-mono); font-weight: 600;">+${this.escape(s.phone)}</span>` : '<span style="color: #94a3b8;">Not linked</span>';
-        const pushDisplay = s.pushName ? ` <small style="color: #64748b;">(${this.escape(s.pushName)})</small>` : '';
+        const phoneDisplay = s.phone
+          ? `<span class="mono">+${this.escape(s.phone)}</span>${s.pushName ? `<span class="cell-sub">${this.escape(s.pushName)}</span>` : ''}`
+          : '<span class="cell-muted">Not linked</span>';
 
         tr.innerHTML = `
-          <td style="text-align: center;">
-            <input type="radio" name="activeSessionRadio" value="${this.escape(s.id)}" ${isActive ? 'checked' : ''} style="cursor: pointer;" title="Select as Active Campaign Session" />
+          <td class="col-check">
+            <input type="radio" name="activeSessionRadio" value="${this.escape(s.id)}" ${isActive ? 'checked' : ''} aria-label="Send from ${label}" />
           </td>
           <td>
-            <strong>${this.escape(s.name || s.id)}</strong>
-            ${isActive ? ' <span class="badge badge-ready" style="font-size: 9px; padding: 1px 4px;">ACTIVE</span>' : ''}
+            <strong>${label}</strong>
+            ${isActive ? ' <span class="status-badge ok sm">Active</span>' : ''}
           </td>
-          <td>${phoneDisplay}${pushDisplay}</td>
-          <td><span class="badge ${statusBadgeClass}">${this.escape(s.status || 'unknown')}</span></td>
-          <td style="font-size: 11px;">
-            <span style="color: ${s.engineLoaded ? '#16a34a' : '#94a3b8'}; font-weight: 600;">
-              ${s.engineLoaded ? '● Running' : '○ Stopped'}
-            </span>
+          <td class="col-phone">${phoneDisplay}</td>
+          <td class="col-status">
+            <span class="status-badge sm ${this.sessionTone(s.status)}">${this.escape(this.statusLabel(s.status))}</span>
+            <span class="cell-sub">Engine ${s.engineLoaded ? 'running' : 'stopped'}</span>
           </td>
-          <td style="white-space: nowrap;">
-            <div style="display: flex; gap: 4px; align-items: center;">
-              <button class="btn btn-sm ${isActive ? 'btn-secondary' : 'btn-primary'} btn-assign-campaign" data-id="${this.escape(s.id)}" data-name="${this.escape(s.name || s.id)}" style="font-size: 10px; padding: 2px 6px;">
-                ${isActive ? 'Selected' : 'Use for Campaign'}
-              </button>
-              ${!isReady ? `
-                <button class="btn btn-sm btn-connect-qr" data-id="${this.escape(s.id)}" data-name="${this.escape(s.name || s.id)}" style="font-size: 10px; padding: 2px 6px; background: #0284c7; color: #fff;">
-                  Scan QR
-                </button>
-              ` : ''}
-              ${s.engineLoaded ? `
-                <button class="btn btn-sm btn-stop-session" data-id="${this.escape(s.id)}" title="Stop engine" style="font-size: 10px; padding: 2px 5px;">Stop</button>
-              ` : `
-                <button class="btn btn-sm btn-start-session" data-id="${this.escape(s.id)}" title="Start engine" style="font-size: 10px; padding: 2px 5px;">Start</button>
-              `}
-              ${isReady ? `
-                <button class="btn btn-sm btn-logout-session" data-id="${this.escape(s.id)}" title="Logout from WhatsApp" style="font-size: 10px; padding: 2px 5px; color: #b45309;">Logout</button>
-              ` : ''}
-              <button class="btn btn-sm btn-delete-session" data-id="${this.escape(s.id)}" data-name="${this.escape(s.name || s.id)}" title="Delete session" style="font-size: 10px; padding: 2px 5px; color: #ef4444;">✕</button>
+          <td>
+            <div class="row-actions">
+              ${isActive ? '' : `<button class="btn btn-xs btn-primary btn-assign-campaign">Use</button>`}
+              ${!isReady ? `<button class="btn btn-xs btn-connect-qr">${icon('qr', 12)}Connect</button>` : ''}
+              ${s.engineLoaded
+                ? `<button class="btn btn-xs btn-stop-session" title="Stop engine">${icon('stop', 12)}Stop</button>`
+                : `<button class="btn btn-xs btn-start-session" title="Start engine">${icon('play', 12)}Start</button>`}
+              ${isReady ? `<button class="btn btn-xs btn-logout-session" title="Log out of WhatsApp">${icon('logout', 12)}Log out</button>` : ''}
+              <button class="btn btn-xs btn-ghost-danger btn-delete-session" title="Delete number" aria-label="Delete ${label}">${icon('trash', 12)}</button>
             </div>
           </td>
         `;
@@ -1507,7 +2095,7 @@ class BulkApp {
       });
     } catch (err) {
       console.error('Error loading sessions table:', err);
-      this.sessionsManagerBody.innerHTML = `<tr><td colspan="6" style="color: #ef4444; padding: 10px;">Failed to load sessions: ${this.escape(err.message)}</td></tr>`;
+      this.sessionsManagerBody.innerHTML = `<tr><td colspan="5" class="table-empty error">Could not load numbers: ${this.escape(err.message)}</td></tr>`;
     }
   }
 
@@ -1567,14 +2155,60 @@ class BulkApp {
 
   showCreateSessionMessage(text, type = 'info') {
     if (!this.createSessionMessage) return;
-    this.createSessionMessage.style.display = 'block';
+    show(this.createSessionMessage);
     this.createSessionMessage.textContent = text;
-    if (type === 'error') {
-      this.createSessionMessage.style.color = '#ef4444';
-    } else if (type === 'success') {
-      this.createSessionMessage.style.color = '#16a34a';
-    } else {
-      this.createSessionMessage.style.color = '#0284c7';
+    this.createSessionMessage.className = `test-result ${type === 'error' ? 'bad' : type === 'success' ? 'ok' : 'info'}`;
+  }
+
+  /** QR overlay states: a spinner with a message, or the "linked" confirmation. */
+  setQrOverlay(state, text = '') {
+    if (!this.qrLoadingOverlay) return;
+    show(this.qrLoadingOverlay);
+    this.qrLoadingOverlay.innerHTML = state === 'done'
+      ? `<span class="qr-done-mark">${icon('check', 26)}</span><strong class="qr-done-text">WhatsApp linked</strong>`
+      : `<span class="spinner"></span><span>${this.escape(text)}</span>`;
+  }
+
+  markQrLinked(sessionId) {
+    clearInterval(this.qrPollInterval);
+    this.qrPollInterval = null;
+    hide(this.sessionQrImg);
+    if (this.modalQrEnlarge) hide(this.modalQrEnlarge);
+    this.setQrOverlay('done');
+    this.qrStatusBadge.textContent = 'Ready';
+    this.qrStatusBadge.className = 'status-badge ok';
+  }
+
+  showQrImage(src) {
+    this.sessionQrImg.src = src;
+    show(this.sessionQrImg);
+    if (this.enlargedQrImg) {
+      this.enlargedQrImg.src = src;
+      show(this.enlargedQrImg);
+    }
+    if (this.enlargedQrLoadingOverlay) hide(this.enlargedQrLoadingOverlay);
+    hide(this.qrLoadingOverlay);
+    this.qrStatusBadge.textContent = 'Scan with WhatsApp';
+    this.qrStatusBadge.className = 'status-badge info';
+  }
+
+  stopQrPolling() {
+    if (this.qrPollInterval) {
+      clearInterval(this.qrPollInterval);
+      this.qrPollInterval = null;
+    }
+  }
+
+  closeModal(modal) {
+    if (!modal) return;
+    hide(modal);
+    // Leaving the number manager stops background QR polling (the enlarged QR sits on top of it).
+    if (modal === this.modalSessionManager) {
+      this.stopQrPolling();
+      this.activeQrSessionId = null;
+      show(this.qrPlaceholder);
+      hide(this.qrActiveContainer);
+      hide(this.modalQrEnlarge);
     }
   }
 
@@ -1585,18 +2219,14 @@ class BulkApp {
     }
 
     this.activeQrSessionId = sessionId;
-    this.qrPlaceholder.style.display = 'none';
-    this.qrActiveContainer.style.display = 'flex';
+    hide(this.qrPlaceholder);
+    show(this.qrActiveContainer);
     this.qrSessionNameText.textContent = sessionName || sessionId;
-    this.qrStatusBadge.textContent = 'Connecting...';
-    this.qrStatusBadge.className = 'badge badge-auth';
-    this.sessionQrImg.style.display = 'none';
-    this.qrLoadingOverlay.style.display = 'flex';
-    this.qrLoadingOverlay.innerHTML = `
-      <div style="width: 20px; height: 20px; border: 2px solid #cbd5e1; border-top-color: #0284c7; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-      <span>Fetching WhatsApp QR...</span>
-    `;
-    this.pairingCodeResult.style.display = 'none';
+    this.qrStatusBadge.textContent = 'Connecting…';
+    this.qrStatusBadge.className = 'status-badge warn';
+    hide(this.sessionQrImg);
+    this.setQrOverlay('loading', 'Fetching WhatsApp QR…');
+    hide(this.pairingCodeResult);
 
     // Start engine if stopped
     try {
@@ -1605,59 +2235,27 @@ class BulkApp {
       // Ignored if already started
     }
 
+    const onLinked = async () => {
+      this.markQrLinked(sessionId);
+      this.toast(`${sessionName || sessionId} is linked and ready to send.`, 'ok');
+      this.selectActiveSession(sessionId);
+      await this.initSession();
+      await this.loadSessionManagerTable();
+    };
+
     const poll = async () => {
+      // A newer displaySessionQr call (or closing the dialog) supersedes this loop.
+      if (this.activeQrSessionId !== sessionId) return;
       try {
         const qrData = await this.api.getSessionQR(sessionId);
-        if (qrData?.qrCode) {
-          this.sessionQrImg.src = qrData.qrCode;
-          this.sessionQrImg.style.display = 'block';
-          if (this.enlargedQrImg) {
-            this.enlargedQrImg.src = qrData.qrCode;
-            this.enlargedQrImg.style.display = 'block';
-          }
-          if (this.enlargedQrLoadingOverlay) {
-            this.enlargedQrLoadingOverlay.style.display = 'none';
-          }
-          this.qrLoadingOverlay.style.display = 'none';
-          this.qrStatusBadge.textContent = 'Scan with WhatsApp';
-          this.qrStatusBadge.className = 'badge badge-qr-ready';
-        }
-
-        if (qrData?.status === 'ready') {
-          clearInterval(this.qrPollInterval);
-          this.qrPollInterval = null;
-          this.sessionQrImg.style.display = 'none';
-          if (this.modalQrEnlarge) this.modalQrEnlarge.style.display = 'none';
-          this.qrLoadingOverlay.style.display = 'flex';
-          this.qrLoadingOverlay.innerHTML = `
-            <div style="color: #16a34a; font-size: 28px; font-weight: bold;">✓</div>
-            <strong style="color: #16a34a;">WhatsApp Linked!</strong>
-          `;
-          this.qrStatusBadge.textContent = 'READY';
-          this.qrStatusBadge.className = 'badge badge-ready';
-          this.selectActiveSession(sessionId);
-          await this.initSession();
-          await this.loadSessionManagerTable();
-        }
-      } catch (err) {
-        // If 400 because already authenticated
+        if (this.activeQrSessionId !== sessionId) return;
+        if (qrData?.qrCode) this.showQrImage(qrData.qrCode);
+        if (qrData?.status === 'ready') await onLinked();
+      } catch {
+        // The QR endpoint errors once the session is authenticated; check for that.
         try {
           const s = await this.api.getSession(sessionId);
-          if (s?.status === 'ready') {
-            clearInterval(this.qrPollInterval);
-            this.qrPollInterval = null;
-            this.sessionQrImg.style.display = 'none';
-            this.qrLoadingOverlay.style.display = 'flex';
-            this.qrLoadingOverlay.innerHTML = `
-              <div style="color: #16a34a; font-size: 28px; font-weight: bold;">✓</div>
-              <strong style="color: #16a34a;">WhatsApp Linked!</strong>
-            `;
-            this.qrStatusBadge.textContent = 'READY';
-            this.qrStatusBadge.className = 'badge badge-ready';
-            this.selectActiveSession(sessionId);
-            await this.initSession();
-            await this.loadSessionManagerTable();
-          }
+          if (s?.status === 'ready' && this.activeQrSessionId === sessionId) await onLinked();
         } catch {
           // Continue polling
         }
@@ -1665,18 +2263,20 @@ class BulkApp {
     };
 
     await poll();
-    this.qrPollInterval = setInterval(poll, 2500);
+    if (this.activeQrSessionId === sessionId && !this.qrPollInterval && this.qrStatusBadge.textContent !== 'Ready') {
+      this.qrPollInterval = setInterval(poll, 2500);
+    }
   }
 
   async handleGetPairingCode() {
     if (!this.activeQrSessionId) {
-      alert('Please start or select a session first to generate a pairing code.');
+      this.toast('Please start or select a session first to generate a pairing code.', 'warn');
       return;
     }
 
     const phone = (this.pairingPhoneInput.value || '').trim().replace(/\D/g, '');
     if (!phone || phone.length < 8) {
-      alert('Please enter a valid phone number with country code (e.g. 919876543210).');
+      this.toast('Please enter a valid phone number with country code (e.g. 919876543210).', 'warn');
       return;
     }
 
@@ -1689,12 +2289,12 @@ class BulkApp {
       if (this.pairingCodeValue) {
         this.pairingCodeValue.textContent = String(code);
       }
-      this.pairingCodeResult.style.display = 'block';
+      show(this.pairingCodeResult);
     } catch (err) {
-      alert(`Could not get pairing code: ${err.message}. Make sure the session status is "qr_ready".`);
+      this.toast(`Could not get pairing code: ${err.message}. Make sure the session status is "qr_ready".`, 'bad');
     } finally {
       this.btnGetPairingCode.disabled = false;
-      this.btnGetPairingCode.textContent = 'Get Code';
+      this.btnGetPairingCode.textContent = 'Get code';
     }
   }
 
@@ -1702,43 +2302,31 @@ class BulkApp {
     if (mode === 'pairing') {
       this.tabModeQr?.classList.remove('active');
       this.tabModePairing?.classList.add('active');
-      if (this.sectionModeQr) this.sectionModeQr.style.display = 'none';
-      if (this.sectionModePairing) this.sectionModePairing.style.display = 'flex';
+      if (this.sectionModeQr) hide(this.sectionModeQr);
+      if (this.sectionModePairing) show(this.sectionModePairing);
     } else {
       this.tabModePairing?.classList.remove('active');
       this.tabModeQr?.classList.add('active');
-      if (this.sectionModePairing) this.sectionModePairing.style.display = 'none';
-      if (this.sectionModeQr) this.sectionModeQr.style.display = 'flex';
+      if (this.sectionModePairing) hide(this.sectionModePairing);
+      if (this.sectionModeQr) show(this.sectionModeQr);
     }
   }
 
   async forceRefreshCurrentQr() {
     if (!this.activeQrSessionId) return;
     if (this.btnManualRefreshQr) {
-      this.btnManualRefreshQr.textContent = '↻ Loading...';
+      this.btnManualRefreshQr.textContent = 'Loading…';
       this.btnManualRefreshQr.disabled = true;
     }
     try {
       const qrData = await this.api.getSessionQR(this.activeQrSessionId);
-      if (qrData?.qrCode) {
-        this.sessionQrImg.src = qrData.qrCode;
-        this.sessionQrImg.style.display = 'block';
-        if (this.enlargedQrImg) {
-          this.enlargedQrImg.src = qrData.qrCode;
-          this.enlargedQrImg.style.display = 'block';
-        }
-        if (this.enlargedQrLoadingOverlay) {
-          this.enlargedQrLoadingOverlay.style.display = 'none';
-        }
-        this.qrLoadingOverlay.style.display = 'none';
-        this.qrStatusBadge.textContent = 'Scan with WhatsApp';
-        this.qrStatusBadge.className = 'badge badge-qr-ready';
-      }
+      if (qrData?.qrCode) this.showQrImage(qrData.qrCode);
     } catch (err) {
       console.warn('Manual QR refresh error:', err.message);
+      this.toast(`Could not refresh the QR code: ${err.message}`, 'bad');
     } finally {
       if (this.btnManualRefreshQr) {
-        this.btnManualRefreshQr.textContent = '↻ Refresh';
+        this.btnManualRefreshQr.textContent = 'Refresh';
         this.btnManualRefreshQr.disabled = false;
       }
     }
@@ -1747,14 +2335,9 @@ class BulkApp {
   copyPairingCode() {
     const raw = this.pairingCodeValue?.textContent || '';
     if (!raw) return;
-    navigator.clipboard?.writeText(raw.replace(/\s+/g, ''));
-    if (this.btnCopyPairingCode) {
-      const orig = this.btnCopyPairingCode.textContent;
-      this.btnCopyPairingCode.textContent = '✓ Copied!';
-      setTimeout(() => {
-        if (this.btnCopyPairingCode) this.btnCopyPairingCode.textContent = orig;
-      }, 2000);
-    }
+    navigator.clipboard?.writeText(raw.replace(/\s+/g, ''))
+      .then(() => this.toast('Pairing code copied.', 'ok', 2500))
+      .catch(() => this.toast('Could not copy. Select the code and copy it manually.', 'warn'));
   }
 
   async handleStartSession(sessionId) {
@@ -1763,7 +2346,7 @@ class BulkApp {
       await this.loadSessionManagerTable();
       await this.initSession();
     } catch (err) {
-      alert(`Could not start session: ${err.message}`);
+      this.toast(`Could not start session: ${err.message}`, 'bad');
     }
   }
 
@@ -1774,7 +2357,7 @@ class BulkApp {
       await this.loadSessionManagerTable();
       await this.initSession();
     } catch (err) {
-      alert(`Could not stop session: ${err.message}`);
+      this.toast(`Could not stop session: ${err.message}`, 'bad');
     }
   }
 
@@ -1785,7 +2368,7 @@ class BulkApp {
       await this.loadSessionManagerTable();
       await this.initSession();
     } catch (err) {
-      alert(`Could not log out session: ${err.message}`);
+      this.toast(`Could not log out session: ${err.message}`, 'bad');
     }
   }
 
@@ -1795,8 +2378,8 @@ class BulkApp {
       if (this.qrPollInterval && this.activeQrSessionId === sessionId) {
         clearInterval(this.qrPollInterval);
         this.qrPollInterval = null;
-        this.qrPlaceholder.style.display = 'block';
-        this.qrActiveContainer.style.display = 'none';
+        show(this.qrPlaceholder);
+        hide(this.qrActiveContainer);
       }
       await this.api.deleteSession(sessionId);
       if (this.currentSessionId === sessionId) {
@@ -1805,7 +2388,7 @@ class BulkApp {
       await this.initSession();
       await this.loadSessionManagerTable();
     } catch (err) {
-      alert(`Could not delete session: ${err.message}`);
+      this.toast(`Could not delete session: ${err.message}`, 'bad');
     }
   }
 
@@ -1813,13 +2396,13 @@ class BulkApp {
 
   showDraftIndicator(count) {
     if (!this.draftStatusBanner) return;
-    this.draftStatusBanner.style.display = 'flex';
+    show(this.draftStatusBanner);
     const span = this.draftStatusBanner.querySelector('span');
-    if (span) span.textContent = `Auto-saved in browser database (${count} numbers) — Refresh-proof`;
+    if (span) span.textContent = `${count.toLocaleString()} recipient${count === 1 ? '' : 's'} saved in this browser. They survive a refresh.`;
   }
 
   hideDraftIndicator() {
-    if (this.draftStatusBanner) this.draftStatusBanner.style.display = 'none';
+    if (this.draftStatusBanner) hide(this.draftStatusBanner);
   }
 
   async saveCurrentDraft() {
@@ -1832,16 +2415,23 @@ class BulkApp {
     }
   }
 
+  scheduleComposerDraft() {
+    clearTimeout(this.composerDraftTimer);
+    this.composerDraftTimer = setTimeout(() => this.saveComposerDraft(), 400);
+  }
+
   async saveComposerDraft() {
-    const text = this.messageTextarea.value || '';
-    await ReportStore.saveComposerDraft({ text });
+    this.blocks[this.activeBlock] = this.messageTextarea.value || '';
+    // `text` keeps older builds able to restore the first block.
+    await ReportStore.saveComposerDraft({ text: this.blocks[0] || '', blocks: [...this.blocks] });
   }
 
   async clearDraftContacts() {
-    if (confirm('Clear the saved draft from local database?')) {
+    if (confirm('Remove the saved recipient list from this browser?')) {
       this.records = [];
       await ReportStore.clearContactsDraft();
       this.hideDraftIndicator();
+      hide(this.duplicateBanner);
       this.renderContactsTable();
       this.updateStats();
     }
@@ -1857,9 +2447,18 @@ class BulkApp {
         this.showDraftIndicator(draft.records.length);
       }
       const compDraft = await ReportStore.getComposerDraft();
-      if (compDraft && compDraft.text && !this.messageTextarea.value) {
-        this.messageTextarea.value = compDraft.text;
-        this.updateComposerStats();
+      const untouched = this.blocks.length === 1 && !this.messageTextarea.value;
+      if (compDraft && untouched) {
+        const blocks = Array.isArray(compDraft.blocks) && compDraft.blocks.length
+          ? compDraft.blocks.slice(0, MAX_BLOCKS).map(b => String(b ?? ''))
+          : compDraft.text ? [String(compDraft.text)] : null;
+        if (blocks) {
+          this.blocks = blocks;
+          this.activeBlock = 0;
+          this.messageTextarea.value = blocks[0];
+          this.renderBlockTabs();
+          this.refreshComposer();
+        }
       }
     } catch (err) {
       console.warn('Could not restore draft:', err);
@@ -1879,7 +2478,7 @@ class BulkApp {
 
   async openReportsModal() {
     if (!this.modalReportsHistory) return;
-    this.modalReportsHistory.style.display = 'grid';
+    show(this.modalReportsHistory);
     this.closeDrilldownView();
     await this.loadReportsKPIs();
     await this.loadHistoricalCampaigns();
@@ -1904,16 +2503,16 @@ class BulkApp {
     if (tab === 'bulk') {
       this.tabBtnBulkReports?.classList.add('active');
       this.tabBtnSingleReports?.classList.remove('active');
-      if (this.viewBulkCampaigns) this.viewBulkCampaigns.style.display = 'block';
-      if (this.viewSingleMessages) this.viewSingleMessages.style.display = 'none';
-      if (this.viewCampaignDetailDrilldown) this.viewCampaignDetailDrilldown.style.display = 'none';
+      if (this.viewBulkCampaigns) show(this.viewBulkCampaigns);
+      if (this.viewSingleMessages) hide(this.viewSingleMessages);
+      if (this.viewCampaignDetailDrilldown) hide(this.viewCampaignDetailDrilldown);
       this.loadHistoricalCampaigns();
     } else {
       this.tabBtnSingleReports?.classList.add('active');
       this.tabBtnBulkReports?.classList.remove('active');
-      if (this.viewBulkCampaigns) this.viewBulkCampaigns.style.display = 'none';
-      if (this.viewSingleMessages) this.viewSingleMessages.style.display = 'block';
-      if (this.viewCampaignDetailDrilldown) this.viewCampaignDetailDrilldown.style.display = 'none';
+      if (this.viewBulkCampaigns) hide(this.viewBulkCampaigns);
+      if (this.viewSingleMessages) show(this.viewSingleMessages);
+      if (this.viewCampaignDetailDrilldown) hide(this.viewCampaignDetailDrilldown);
       this.loadSingleMessages();
     }
   }
@@ -1921,7 +2520,7 @@ class BulkApp {
   async refreshCurrentReportsView() {
     await this.loadReportsKPIs();
     if (this.tabBtnBulkReports?.classList.contains('active')) {
-      if (this.viewCampaignDetailDrilldown?.style.display === 'flex' && this.activeDrilldownCampaignId) {
+      if (this.viewCampaignDetailDrilldown && !this.viewCampaignDetailDrilldown.hidden && this.activeDrilldownCampaignId) {
         await this.openCampaignDrilldown(this.activeDrilldownCampaignId);
       } else {
         await this.loadHistoricalCampaigns();
@@ -1934,15 +2533,36 @@ class BulkApp {
   async loadHistoricalCampaigns() {
     const tbody = this.campaignsHistoryBody;
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #94a3b8; padding: 20px;">Loading campaigns...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="table-empty"><span class="spinner"></span> Loading campaigns…</td></tr>';
 
     try {
       const campaigns = await ReportStore.getAllCampaigns();
       this.currentLoadedCampaigns = campaigns;
       this.renderHistoricalCampaignsTable(campaigns);
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${this.escape(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="table-empty error">Could not load reports: ${this.escape(err.message)}</td></tr>`;
     }
+  }
+
+  /** status-badge tone + label for a stored campaign status. */
+  campaignStatusBadge(status) {
+    const map = {
+      completed: ['ok', 'Completed'],
+      in_progress: ['info', 'In progress'],
+      running: ['info', 'Running'],
+      cancelled: ['warn', 'Cancelled'],
+      failed: ['bad', 'Failed'],
+    };
+    const [tone, label] = map[status] || ['', String(status || 'unknown').replace(/_/g, ' ')];
+    return `<span class="status-badge sm ${tone}">${this.escape(label)}</span>`;
+  }
+
+  deliveryBadge(status) {
+    return status === 'sent'
+      ? '<span class="status-badge ok sm">Sent</span>'
+      : status === 'failed'
+        ? '<span class="status-badge bad sm">Failed</span>'
+        : `<span class="status-badge sm">${this.escape(status || 'pending')}</span>`;
   }
 
   renderHistoricalCampaignsTable(campaigns) {
@@ -1956,57 +2576,39 @@ class BulkApp {
       : campaigns;
 
     if (filtered.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="9" style="text-align: center; color: #94a3b8; padding: 20px;">
-            ${query ? 'No campaigns matching your search.' : 'No campaigns executed yet. Any campaign you run will permanently appear here.'}
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = query
+        ? `<tr><td colspan="7" class="table-empty">${icon('search', 26)}<strong>No matches</strong>No campaign matches “${this.escape(query)}”.</td></tr>`
+        : `<tr><td colspan="7" class="table-empty">${icon('file', 26)}<strong>No campaigns yet</strong>Every campaign you send is recorded here.</td></tr>`;
       return;
     }
 
     filtered.forEach((c) => {
       const tr = document.createElement('tr');
       const dateStr = new Date(c.createdAt).toLocaleString();
-      const statusClass = c.status === 'completed' ? 'completed' : (c.status === 'in_progress' ? 'in_progress' : (c.status === 'cancelled' ? 'cancelled' : 'failed'));
-      const statusLabel = (c.status || 'completed').toUpperCase();
 
-      const total = Number(c.totalRecipients) || 0;
+      // Success is measured against messages (a recipient can receive several blocks).
       const sent = Number(c.sentCount) || 0;
       const failed = Number(c.failedCount) || 0;
-      const successPct = total > 0 ? ((sent / total) * 100).toFixed(1) + '%' : (sent > 0 ? '100%' : '0%');
+      const totalMessages = Number(c.totalMessages) || Number(c.totalRecipients) || 0;
+      const successPct = totalMessages > 0 ? `${Math.min(100, (sent / totalMessages) * 100).toFixed(1)}%` : '—';
 
       tr.innerHTML = `
-        <td style="font-size: 11px; color: #64748b;">${dateStr}</td>
         <td>
-          <strong style="color: #0f172a; font-size: 12px;">${this.escape(c.name)}</strong>
-          <div style="font-size: 10px; color: #64748b; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            ${this.escape(c.messagePreview || '—')}
-          </div>
+          <strong>${this.escape(c.name)}</strong>
+          <span class="cell-sub">${dateStr} · ${Number(c.totalRecipients) || 0} recipients</span>
+          <span class="cell-sub cell-ellipsis" title="${this.escape(c.messagePreview || '')}">${this.escape(c.messagePreview || '—')}</span>
         </td>
-        <td>
-          <span class="badge" style="background: #f1f5f9; color: #0284c7; font-weight: 600;">${this.escape(c.sessionName || c.sessionId)}</span>
-        </td>
-        <td style="text-align: center; font-weight: 600;">${total}</td>
-        <td style="text-align: center; color: #059669; font-weight: 700;">${sent}</td>
-        <td style="text-align: center; color: ${failed > 0 ? '#ef4444' : '#94a3b8'}; font-weight: 700;">${failed}</td>
-        <td style="text-align: center; font-weight: 600; color: #8b5cf6;">${successPct}</td>
-        <td>
-          <span class="report-status-badge ${statusClass}">${statusLabel}</span>
-        </td>
-        <td style="text-align: center;">
-          <div style="display: flex; gap: 4px; justify-content: center;">
-            <button class="report-row-action-btn primary" data-action="view" data-id="${c.id}" title="View Recipient Numbers & Delivery Status">
-              🔍 View
-            </button>
-            <button class="report-row-action-btn" data-action="excel" data-id="${c.id}" title="Download Excel (.xlsx) Report">
-              📥 Excel
-            </button>
-            ${failed > 0 ? `<button class="report-row-action-btn" data-action="retry" data-id="${c.id}" style="color: #dc2626;" title="Load failed numbers into composer">🔄 Retry</button>` : ''}
-            <button class="report-row-action-btn danger" data-action="delete" data-id="${c.id}" title="Delete Report">
-              🗑️
-            </button>
+        <td class="col-hide-sm"><span class="status-badge info sm">${this.escape(c.sessionName || c.sessionId)}</span></td>
+        <td class="num text-ok">${sent}</td>
+        <td class="num ${failed > 0 ? 'text-bad' : 'cell-muted'}">${failed}</td>
+        <td class="num col-hide-sm text-purple">${successPct}</td>
+        <td class="col-status">${this.campaignStatusBadge(c.status)}</td>
+        <td class="col-action">
+          <div class="row-actions">
+            <button class="btn btn-xs btn-primary" data-action="view" title="Recipients and delivery status">${icon('eye', 12)}View</button>
+            <button class="btn btn-xs" data-action="excel" title="Download Excel (.xlsx) report">${icon('download', 12)}Excel</button>
+            ${failed > 0 ? `<button class="btn btn-xs" data-action="retry" title="Load failed numbers as recipients">${icon('retry', 12)}Retry</button>` : ''}
+            <button class="btn btn-xs btn-ghost-danger" data-action="delete" title="Delete report" aria-label="Delete report ${this.escape(c.name)}">${icon('trash', 12)}</button>
           </div>
         </td>
       `;
@@ -2023,13 +2625,13 @@ class BulkApp {
 
   async openCampaignDrilldown(campaignId) {
     this.activeDrilldownCampaignId = campaignId;
-    if (this.viewBulkCampaigns) this.viewBulkCampaigns.style.display = 'none';
-    if (this.viewCampaignDetailDrilldown) this.viewCampaignDetailDrilldown.style.display = 'flex';
+    if (this.viewBulkCampaigns) hide(this.viewBulkCampaigns);
+    if (this.viewCampaignDetailDrilldown) show(this.viewCampaignDetailDrilldown);
 
     try {
       const data = await ReportStore.getCampaignDetails(campaignId);
       if (!data || !data.campaign) {
-        alert('Campaign report not found.');
+        this.toast('Campaign report not found.', 'bad');
         this.closeDrilldownView();
         return;
       }
@@ -2040,7 +2642,7 @@ class BulkApp {
       if (this.drilldownCampaignTitle) this.drilldownCampaignTitle.textContent = campaign.name;
       if (this.drilldownSessionBadge) this.drilldownSessionBadge.textContent = campaign.sessionName || campaign.sessionId;
       if (this.drilldownMetaSubtitle) {
-        this.drilldownMetaSubtitle.textContent = `Date: ${new Date(campaign.createdAt).toLocaleString()} | Total: ${campaign.totalRecipients} | Sent: ${campaign.sentCount} | Failed: ${campaign.failedCount}`;
+        this.drilldownMetaSubtitle.textContent = `${new Date(campaign.createdAt).toLocaleString()} · ${campaign.totalRecipients} recipients · ${campaign.sentCount} sent · ${campaign.failedCount} failed`;
       }
 
       const sentLogs = this.currentDrilldownLogs.filter(l => l.status === 'sent');
@@ -2051,8 +2653,8 @@ class BulkApp {
       if (this.drilldownCountFailed) this.drilldownCountFailed.textContent = failedLogs.length;
 
       if (this.btnRetryFailedFromReport) {
-        this.btnRetryFailedFromReport.style.display = failedLogs.length > 0 ? 'inline-flex' : 'none';
-        this.btnRetryFailedFromReport.textContent = `🔄 Re-Send Failed Numbers (${failedLogs.length})`;
+        show(this.btnRetryFailedFromReport, failedLogs.length > 0);
+        this.btnRetryFailedFromReport.innerHTML = `${icon('retry', 13)}Re-send failed (${failedLogs.length})`;
       }
 
       if (this.drilldownMessagePreviewText) {
@@ -2066,7 +2668,7 @@ class BulkApp {
 
       this.renderDrilldownNumbersTable();
     } catch (err) {
-      alert(`Error opening campaign details: ${err.message}`);
+      this.toast(`Error opening campaign details: ${err.message}`, 'bad');
       this.closeDrilldownView();
     }
   }
@@ -2081,48 +2683,39 @@ class BulkApp {
     if (this.drilldownFilter === 'failed') list = list.filter(l => l.status === 'failed');
 
     if (list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 14px;">No records match the "${this.drilldownFilter}" filter.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="table-empty">No ${this.drilldownFilter === 'all' ? '' : `${this.escape(this.drilldownFilter)} `}records in this campaign.</td></tr>`;
       return;
     }
 
-    list.forEach((log, idx) => {
-      const tr = document.createElement('tr');
+    tbody.innerHTML = list.map((log, idx) => {
       const isSent = log.status === 'sent';
-      const badge = isSent
-        ? `<span class="badge badge-sent">Sent</span>`
-        : `<span class="badge badge-failed">Failed</span>`;
-
       const detailText = isSent
-        ? (log.waMessageId ? `<span style="font-family: var(--font-mono); font-size: 10px;">ID: ${this.escape(log.waMessageId)}</span>` : '<span style="color: #059669;">Delivered</span>')
-        : `<span style="color: #ef4444; font-size: 11px;">${this.escape(log.error || 'Submission Failed')}</span>`;
-
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td><strong>${this.escape(log.recipient)}</strong></td>
-        <td>${this.escape(log.name || '—')}</td>
-        <td>${badge}</td>
-        <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-          ${detailText}
-        </td>
-        <td style="font-size: 11px; color: #64748b;">${log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '—'}</td>
-      `;
-      tbody.appendChild(tr);
-    });
+        ? (log.waMessageId ? `<span class="mono">${this.escape(log.waMessageId)}</span>` : '<span class="text-ok">Delivered</span>')
+        : `<span class="text-bad">${this.escape(log.error || 'Submission failed')}</span>`;
+      return `<tr>
+        <td class="col-num">${idx + 1}</td>
+        <td><strong class="mono">${this.escape(log.recipient)}</strong></td>
+        <td class="col-hide-sm">${this.escape(log.name || '—')}</td>
+        <td class="col-status">${this.deliveryBadge(log.status)}</td>
+        <td><div class="cell-ellipsis">${detailText}</div></td>
+        <td class="col-time">${log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '—'}</td>
+      </tr>`;
+    }).join('');
   }
 
   closeDrilldownView() {
     this.activeDrilldownCampaignId = null;
     this.currentDrilldownLogs = [];
-    if (this.viewCampaignDetailDrilldown) this.viewCampaignDetailDrilldown.style.display = 'none';
-    if (this.viewBulkCampaigns) this.viewBulkCampaigns.style.display = 'block';
+    if (this.viewCampaignDetailDrilldown) hide(this.viewCampaignDetailDrilldown);
+    if (this.viewBulkCampaigns) show(this.viewBulkCampaigns);
   }
 
   async exportCampaignExcelById(campaignId) {
     try {
       const filename = await ReportStore.exportCampaignReport(campaignId, 'xlsx');
-      alert(`Report exported successfully: ${filename}`);
+      this.toast(`Report exported successfully: ${filename}`, 'ok');
     } catch (e) {
-      alert(`Export failed: ${e.message}`);
+      this.toast(`Export failed: ${e.message}`, 'bad');
     }
   }
 
@@ -2134,9 +2727,9 @@ class BulkApp {
   async exportAllSummaryExcel() {
     try {
       const filename = await ReportStore.exportAllCampaignsSummary('xlsx');
-      alert(`Summary report exported successfully: ${filename}`);
+      this.toast(`Summary report exported successfully: ${filename}`, 'ok');
     } catch (e) {
-      alert(`Export failed: ${e.message}`);
+      this.toast(`Export failed: ${e.message}`, 'bad');
     }
   }
 
@@ -2144,12 +2737,12 @@ class BulkApp {
     try {
       const data = await ReportStore.getCampaignDetails(campaignId);
       if (!data || !data.logs) {
-        alert('No logs found for this campaign.');
+        this.toast('No logs found for this campaign.', 'warn');
         return;
       }
       const failed = data.logs.filter(l => l.status === 'failed');
       if (failed.length === 0) {
-        alert('This campaign had no failed numbers!');
+        this.toast('This campaign had no failed numbers!', 'warn');
         return;
       }
 
@@ -2168,10 +2761,10 @@ class BulkApp {
       this.updateStats();
       this.saveCurrentDraft();
 
-      this.modalReportsHistory.style.display = 'none';
-      alert(`Loaded ${failed.length} failed recipient(s) directly into your WhatsApp Numbers table for a retry campaign!`);
+      hide(this.modalReportsHistory);
+      this.toast(`Loaded ${failed.length} failed recipient(s) directly into your WhatsApp Numbers table for a retry campaign!`, 'ok');
     } catch (e) {
-      alert(`Failed to load retry numbers: ${e.message}`);
+      this.toast(`Failed to load retry numbers: ${e.message}`, 'bad');
     }
   }
 
@@ -2187,7 +2780,7 @@ class BulkApp {
       await this.loadReportsKPIs();
       await this.loadHistoricalCampaigns();
     } catch (e) {
-      alert(`Could not delete report: ${e.message}`);
+      this.toast(`Could not delete report: ${e.message}`, 'bad');
     }
   }
 
@@ -2198,47 +2791,38 @@ class BulkApp {
       await ReportStore.clearAllSingleMessages();
       await this.loadReportsKPIs();
       await this.loadHistoricalCampaigns();
-      alert('All campaign reports have been cleared.');
+      this.toast('All campaign reports have been cleared.', 'ok');
     } catch (e) {
-      alert(`Error clearing reports: ${e.message}`);
+      this.toast(`Error clearing reports: ${e.message}`, 'bad');
     }
   }
 
   async loadSingleMessages() {
     const tbody = this.singleMessagesBody;
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">Loading single messages...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty"><span class="spinner"></span> Loading messages…</td></tr>';
 
     try {
       const messages = await ReportStore.getAllSingleMessages();
-      tbody.innerHTML = '';
       if (messages.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">No single test messages recorded yet.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="5" class="table-empty">${icon('message', 26)}<strong>No single messages</strong>One-off messages sent from this browser appear here.</td></tr>`;
         return;
       }
 
-      messages.forEach(m => {
-        const tr = document.createElement('tr');
-        const isSent = m.status === 'sent';
-        const badge = isSent
-          ? `<span class="badge badge-sent">Sent</span>`
-          : `<span class="badge badge-failed">Failed</span>`;
-        const detail = isSent
-          ? (m.waMessageId ? `<span style="font-family: var(--font-mono); font-size: 10px;">ID: ${this.escape(m.waMessageId)}</span>` : '<span style="color: #059669;">Delivered</span>')
-          : `<span style="color: #ef4444; font-size: 11px;">${this.escape(m.error || 'Failed')}</span>`;
-
-        tr.innerHTML = `
-          <td style="font-size: 11px; color: #64748b;">${new Date(m.timestamp).toLocaleString()}</td>
-          <td><strong>${this.escape(m.recipient)}</strong></td>
-          <td><span class="badge" style="background: #f1f5f9; color: #0284c7;">${this.escape(m.sessionName || m.sessionId)}</span></td>
-          <td style="max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escape(m.message || '—')}</td>
-          <td>${badge}</td>
-          <td>${detail}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+      tbody.innerHTML = messages.map(m => {
+        const detail = m.status === 'sent'
+          ? (m.waMessageId ? `<span class="cell-sub mono">${this.escape(m.waMessageId)}</span>` : '')
+          : `<span class="cell-sub text-bad">${this.escape(m.error || 'Failed')}</span>`;
+        return `<tr>
+          <td class="col-time">${new Date(m.timestamp).toLocaleString()}</td>
+          <td><strong class="mono">${this.escape(m.recipient)}</strong></td>
+          <td class="col-hide-sm"><span class="status-badge info sm">${this.escape(m.sessionName || m.sessionId)}</span></td>
+          <td><div class="cell-ellipsis" title="${this.escape(m.message || '')}">${this.escape(m.message || '—')}</div></td>
+          <td class="col-status">${this.deliveryBadge(m.status)}${detail}</td>
+        </tr>`;
+      }).join('');
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${this.escape(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="table-empty error">Could not load messages: ${this.escape(e.message)}</td></tr>`;
     }
   }
 
@@ -2251,35 +2835,23 @@ class BulkApp {
   // ========== QR Zoom & Sizing Methods ==========
 
   setQrSize(sizePx) {
+    // .qr-box sizes itself (and its image) from --qr-size in styles.css.
     this.currentQrSize = sizePx;
-    if (this.qrImageWrapper) {
-      this.qrImageWrapper.style.width = `${sizePx}px`;
-      this.qrImageWrapper.style.height = `${sizePx}px`;
-    }
-    if (this.sessionQrImg) {
-      this.sessionQrImg.style.width = `${sizePx - 10}px`;
-      this.sessionQrImg.style.height = `${sizePx - 10}px`;
-    }
+    this.qrImageWrapper?.style.setProperty('--qr-size', `${sizePx}px`);
   }
 
   setEnlargedQrZoom(sizePx) {
-    if (this.enlargedQrBox) {
-      this.enlargedQrBox.style.width = `${sizePx}px`;
-      this.enlargedQrBox.style.height = `${sizePx}px`;
-    }
-    if (this.enlargedQrImg) {
-      this.enlargedQrImg.style.width = `${sizePx - 20}px`;
-      this.enlargedQrImg.style.height = `${sizePx - 20}px`;
-    }
+    // min() keeps the big QR inside narrow (phone) viewports.
+    this.enlargedQrBox?.style.setProperty('--qr-size', `min(${sizePx}px, calc(100vw - 60px))`);
     if (this.qrZoomValText) {
       this.qrZoomValText.textContent = `${sizePx}px`;
     }
   }
 
   openEnlargedQrModal() {
-    const hasQrSrc = this.sessionQrImg && this.sessionQrImg.src && this.sessionQrImg.style.display !== 'none';
+    const hasQrSrc = this.sessionQrImg && this.sessionQrImg.src && !this.sessionQrImg.hidden;
     if (!hasQrSrc && !this.activeQrSessionId) {
-      alert('Please start or select a session to view its QR code first.');
+      this.toast('Please start or select a session to view its QR code first.', 'warn');
       return;
     }
     if (!this.modalQrEnlarge) return;
@@ -2290,14 +2862,14 @@ class BulkApp {
 
     if (hasQrSrc && this.enlargedQrImg) {
       this.enlargedQrImg.src = this.sessionQrImg.src;
-      this.enlargedQrImg.style.display = 'block';
-      if (this.enlargedQrLoadingOverlay) this.enlargedQrLoadingOverlay.style.display = 'none';
+      show(this.enlargedQrImg);
+      if (this.enlargedQrLoadingOverlay) hide(this.enlargedQrLoadingOverlay);
     } else {
-      if (this.enlargedQrLoadingOverlay) this.enlargedQrLoadingOverlay.style.display = 'flex';
-      if (this.enlargedQrImg) this.enlargedQrImg.style.display = 'none';
+      if (this.enlargedQrLoadingOverlay) show(this.enlargedQrLoadingOverlay);
+      if (this.enlargedQrImg) hide(this.enlargedQrImg);
     }
 
-    this.modalQrEnlarge.style.display = 'grid';
+    show(this.modalQrEnlarge);
   }
 
   escape(str) {
