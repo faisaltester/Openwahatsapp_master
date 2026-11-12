@@ -2,11 +2,11 @@
  * OpenWA Dedicated Bulk Messaging Module - Main Application Controller
  */
 
-import { OpenWaApiService } from './api-service.js?v=20261112c';
-import { ContactParser } from './contact-parser.js?v=20261112c';
-import { CampaignManager } from './campaign-manager.js?v=20261112c';
-import { ReportStore } from './report-store.js?v=20261112c';
-import { icon, hydrateIcons } from './icons.js?v=20261112c';
+import { OpenWaApiService } from './api-service.js?v=20261112d';
+import { ContactParser } from './contact-parser.js?v=20261112d';
+import { CampaignManager } from './campaign-manager.js?v=20261112d';
+import { ReportStore, OPEN_CAMPAIGN_STATES } from './report-store.js?v=20261112d';
+import { icon, hydrateIcons } from './icons.js?v=20261112d';
 
 /** Visibility is driven by the `hidden` attribute (styles.css: [hidden] { display:none !important }). */
 const show = (el, visible = true) => { if (el) el.hidden = !visible; };
@@ -45,6 +45,10 @@ class BulkApp {
     this.blocks = ['']; // Message blocks, each sent as its own WhatsApp message in order
     this.activeBlock = 0;
     this.addressbookMode = 'contacts';
+    this.recoveries = new Map(); // campaignId -> verdict from CampaignManager.inspect (unfinished after a reload)
+    this.monitorTab = 'deliveries';
+    this.drillTab = 'recipients';
+    this.pauseUntil = null;
 
     hydrateIcons();
     this.initElements();
@@ -53,6 +57,7 @@ class BulkApp {
     this.updateDelayDisplay(this.delaySlider.value);
     this.renderContactsTable();
     this.renderMonitorResults([]);
+    this.renderMonitorActivity();
     this.refreshComposer();
     this.initSession();
   }
@@ -282,6 +287,46 @@ class BulkApp {
     this.addressbookSelectAll = document.getElementById('addressbookSelectAll');
     this.addressbookSelectedCount = document.getElementById('addressbookSelectedCount');
     this.panelRecipients = document.querySelector('.panel-recipients');
+
+    // Status overview, step badges, progress views
+    this.recoveryHost = document.getElementById('recoveryHost');
+    this.statusTile = document.getElementById('statusTile');
+    this.statusTileTitle = document.getElementById('statusTileTitle');
+    this.statusTileText = document.getElementById('statusTileText');
+    this.statusTileBar = document.getElementById('statusTileBar');
+    this.kpiMessagesSub = document.getElementById('kpiMessagesSub');
+    this.stepStatus = [1, 2, 3].map(n => document.getElementById(`stepStatus${n}`));
+    this.monitorExplain = document.getElementById('monitorExplain');
+    this.monitorExplainText = document.getElementById('monitorExplainText');
+    this.batchStripWrap = document.getElementById('batchStripWrap');
+    this.batchStrip = document.getElementById('batchStrip');
+    this.tabMonitorDeliveries = document.getElementById('tabMonitorDeliveries');
+    this.tabMonitorActivity = document.getElementById('tabMonitorActivity');
+    this.countDeliveries = document.getElementById('countDeliveries');
+    this.countActivity = document.getElementById('countActivity');
+    this.viewMonitorDeliveries = document.getElementById('viewMonitorDeliveries');
+    this.viewMonitorActivity = document.getElementById('viewMonitorActivity');
+    this.activityList = document.getElementById('activityList');
+
+    // Report detail additions
+    this.drilldownStatusBadge = document.getElementById('drilldownStatusBadge');
+    this.drilldownNote = document.getElementById('drilldownNote');
+    this.drilldownNoteText = document.getElementById('drilldownNoteText');
+    this.btnDrillResume = document.getElementById('btnDrillResume');
+    this.btnDrillStop = document.getElementById('btnDrillStop');
+    this.drillKpiRecipients = document.getElementById('drillKpiRecipients');
+    this.drillKpiMessages = document.getElementById('drillKpiMessages');
+    this.drillKpiSent = document.getElementById('drillKpiSent');
+    this.drillKpiFailed = document.getElementById('drillKpiFailed');
+    this.drillKpiPending = document.getElementById('drillKpiPending');
+    this.drillBatchWrap = document.getElementById('drillBatchWrap');
+    this.drillBatchStrip = document.getElementById('drillBatchStrip');
+    this.tabDrillRecipients = document.getElementById('tabDrillRecipients');
+    this.tabDrillActivity = document.getElementById('tabDrillActivity');
+    this.drilldownCountEvents = document.getElementById('drilldownCountEvents');
+    this.drillViewRecipients = document.getElementById('drillViewRecipients');
+    this.drillViewActivity = document.getElementById('drillViewActivity');
+    this.drilldownActivityList = document.getElementById('drilldownActivityList');
   }
 
   bindEvents() {
@@ -516,6 +561,31 @@ class BulkApp {
     // Campaign Manager callbacks
     this.campaignManager.onUpdate((event, data) => this.handleCampaignUpdate(event, data));
 
+    // Progress views & status overview
+    this.tabMonitorDeliveries?.addEventListener('click', () => this.switchMonitorTab('deliveries'));
+    this.tabMonitorActivity?.addEventListener('click', () => this.switchMonitorTab('activity'));
+    this.statusTile?.addEventListener('click', () => {
+      const attention = this.recoveryHost && !this.recoveryHost.hidden && !this.campaignManager.campaignId;
+      const target = attention ? this.recoveryHost : this.liveMonitorDrawer;
+      if (!attention) this.toggleMonitorDrawer(true);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    this.recoveryHost?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-recovery]');
+      if (btn) this.handleRecoveryAction(btn.dataset.recovery, btn.dataset.id, btn);
+    });
+    this.tabDrillRecipients?.addEventListener('click', () => this.switchDrillTab('recipients'));
+    this.tabDrillActivity?.addEventListener('click', () => this.switchDrillTab('activity'));
+    this.btnDrillResume?.addEventListener('click', () => this.handleRecoveryAction('resume', this.activeDrilldownCampaignId, this.btnDrillResume));
+    this.btnDrillStop?.addEventListener('click', () => this.handleRecoveryAction('stop', this.activeDrilldownCampaignId, this.btnDrillStop));
+
+    // Closing or reloading mid-campaign leaves the remaining batches unsent: ask first.
+    window.addEventListener('beforeunload', (e) => {
+      if (!this.campaignManager.isBusy) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
     // Modals
     document.querySelectorAll('.btnCloseModal').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -634,11 +704,11 @@ class BulkApp {
         this.sessionStatusPill.textContent = 'No number';
         this.activeSessionNameTag.textContent = '—';
         this.waReadyStatusTag.className = 'status-dot bad';
-        this.waReadyStatusTag.textContent = 'WhatsApp: not linked';
+        this.waReadyStatusTag.textContent = 'No number linked';
       }
 
       this.apiConnectionStatus.className = 'status-dot ok';
-      this.apiConnectionStatus.textContent = 'API connected';
+      this.apiConnectionStatus.textContent = 'Connected';
       this.apiConnectionStatus.onclick = null;
       this.apiConnectionStatus.removeAttribute('role');
     } catch (err) {
@@ -646,7 +716,7 @@ class BulkApp {
       const isAuth = err.status === 401 || String(err.message).toLowerCase().includes('api key');
       this.apiConnectionStatus.className = 'status-dot bad clickable';
       this.apiConnectionStatus.setAttribute('role', 'button');
-      this.apiConnectionStatus.textContent = isAuth ? 'API key required (click to set)' : 'API unreachable (click to configure)';
+      this.apiConnectionStatus.textContent = isAuth ? 'API key needed (click to set)' : 'Unreachable (click to configure)';
       this.apiConnectionStatus.onclick = () => this.btnOpenApiConfig.click();
       this.sessionSelect.innerHTML = `<option value="">${isAuth ? 'Enter API key in settings' : 'Cannot reach API'}</option>`;
       this.sessionStatusPill.className = 'status-badge bad';
@@ -659,6 +729,10 @@ class BulkApp {
     }
     this.refreshComposer();
     await this.updateReportsBadge();
+    if (!this.recoveryChecked) {
+      this.recoveryChecked = true;
+      await this.checkOpenCampaigns();
+    }
   }
 
   /** Human label for a session status (badges capitalise via CSS). */
@@ -692,11 +766,13 @@ class BulkApp {
       this.sessionStatusPill.textContent = this.statusLabel(session.status);
 
       this.waReadyStatusTag.className = `status-dot ${isReady ? 'ok' : 'bad'}`;
-      this.waReadyStatusTag.textContent = isReady ? 'WhatsApp ready' : `WhatsApp: ${this.statusLabel(session.status)}`;
+      this.waReadyStatusTag.textContent = isReady ? 'Ready to send' : this.capitalize(this.statusLabel(session.status));
     } catch {
       const fallback = this.sessions.find(s => s.id === this.currentSessionId);
       this.sessionStatusPill.className = 'status-badge bad';
       this.sessionStatusPill.textContent = fallback?.status || 'disconnected';
+      this.waReadyStatusTag.className = 'status-dot bad';
+      this.waReadyStatusTag.textContent = 'Could not check';
     }
     this.renderChecklist();
   }
@@ -1103,6 +1179,7 @@ class BulkApp {
     if (this.kpiMessages) this.kpiMessages.textContent = messages.toLocaleString();
     if (this.kpiBatches) this.kpiBatches.textContent = batches.toLocaleString();
     if (this.itemsPerRecipient) this.itemsPerRecipient.textContent = perRecipient;
+    if (this.kpiMessagesSub) this.kpiMessagesSub.textContent = `${perRecipient} per recipient`;
 
     if (this.kpiDuration) {
       if (!messages) {
@@ -1181,11 +1258,15 @@ class BulkApp {
   }
 
   renderChecklist() {
-    if (!this.sendChecklist) return;
-    const glyph = { ok: 'check', bad: 'x', warn: 'alert' };
-    this.sendChecklist.innerHTML = this.getSendIssues().map(i =>
-      `<div class="check-item ${i.level}">${icon(glyph[i.level], 15)}<span>${this.escape(i.text)}</span></div>`
-    ).join('');
+    const issues = this.getSendIssues();
+    if (this.sendChecklist) {
+      const glyph = { ok: 'check', bad: 'x', warn: 'alert' };
+      this.sendChecklist.innerHTML = issues.map(i =>
+        `<div class="check-item ${i.level}">${icon(glyph[i.level], 15)}<span>${this.escape(i.text)}</span></div>`
+      ).join('');
+    }
+    this.renderStepStatus(issues);
+    this.renderLiveStatus(issues);
   }
 
   /** Current composer state as a CampaignManager messageConfig. */
@@ -1394,10 +1475,22 @@ class BulkApp {
     const sessionName = currentSession?.name || currentSession?.id || this.currentSessionId;
     const campaignName = customTitle || `Bulk Campaign ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
+    if (this.campaignManager.state === 'running' || this.campaignManager.loopActive) {
+      this.toast('A campaign is already sending from this page. Wait for it to finish or cancel it first.', 'warn');
+      return;
+    }
+    const busyOnServer = [...this.recoveries.values()].find(v =>
+      (v.kind === 'server_running' || v.kind === 'other_tab') && v.campaign?.sessionId === this.currentSessionId);
+    if (busyOnServer) {
+      this.toast(`“${busyOnServer.campaign.name}” is still sending on this number. Resume or stop it (notice at the top) before starting another campaign.`, 'bad', 12000);
+      this.recoveryHost?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
     if (this.campaignManager.state === 'scheduled') {
       if (!confirm('A campaign is already scheduled. Replace it with this one?')) return;
       this.replacingSchedule = true;
-      this.campaignManager.cancelSchedule();
+      this.campaignManager.cancelSchedule('Replaced by a newer campaign before it started. Nothing was sent.');
       this.replacingSchedule = false;
     }
 
@@ -1415,7 +1508,7 @@ class BulkApp {
 
       hide(this.btnRetryFailed);
       if (isScheduled) {
-        this.campaignManager.schedule(scheduleAt);
+        await this.campaignManager.schedule(scheduleAt);
         this.toast(`Scheduled ${selectedRecipients.length.toLocaleString()} recipient(s) for ${scheduleAt.toLocaleString()}. Keep this tab open.`, 'ok');
       } else {
         this.btnSendNow.disabled = true;
@@ -1441,7 +1534,7 @@ class BulkApp {
     this.btnToggleMonitor?.setAttribute('aria-expanded', String(shouldOpen));
     if (this.toggleMonitorText) {
       const count = this.campaignManager?.allResults?.length || 0;
-      this.toggleMonitorText.textContent = shouldOpen ? 'Hide log' : `Show log${count ? ` (${count})` : ''}`;
+      this.toggleMonitorText.textContent = shouldOpen ? 'Hide details' : `Show details${count ? ` (${count})` : ''}`;
     }
   }
 
@@ -1461,6 +1554,7 @@ class BulkApp {
       const text = h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
       if (this.scheduleCountdownText) this.scheduleCountdownText.textContent = text;
       if (this.monitorSubText) this.monitorSubText.textContent = `Starts ${new Date(target).toLocaleString()} (in ${text})`;
+      if (this.statusTileText) this.statusTileText.textContent = `Starts in ${text}. Keep this page open.`;
     };
     show(this.scheduleCountdownDisplay);
     tick();
@@ -1477,9 +1571,19 @@ class BulkApp {
     const { state, stats } = data;
     const cm = this.campaignManager;
 
+    if (event === 'log') {
+      this.renderMonitorActivity();
+      this.refreshLiveDrilldown();
+      return;
+    }
+    if (event === 'inter_batch_delay') this.pauseUntil = Date.now() + data.seconds * 1000;
+    else if (event === 'batch_started' || event === 'campaign_finished' || event === 'setup') this.pauseUntil = null;
+
     if (event === 'campaign_finished') {
       if (cm.haltReason) {
         this.toast(cm.haltReason, 'bad', 15000);
+      } else if (state === 'stopped') {
+        this.toast(cm.stopNote || 'Campaign stopped.', 'warn', 12000);
       } else if (state === 'completed') {
         this.toast(`Campaign finished: ${stats.sentCount} sent, ${stats.failedCount} failed.`, stats.failedCount ? 'warn' : 'ok');
       }
@@ -1489,17 +1593,20 @@ class BulkApp {
       this.toast('Scheduled campaign cancelled. Nothing was sent.', 'info');
     }
 
-    // Status text & UI buttons (label casing comes from CSS)
-    this.monitorStatusText.textContent = state === 'idle' ? 'Idle' : state;
-    if (this.monitorStatusText.dataset) this.monitorStatusText.dataset.state = state;
+    // Status text & UI buttons
+    this.monitorStatusText.textContent = this.stateLabel(state);
+    this.monitorStatusText.dataset.state = state;
+    if (this.liveMonitorDrawer) this.liveMonitorDrawer.dataset.state = state;
     if (this.monitorSubText) {
       if (event === 'inter_batch_delay') {
-        this.monitorSubText.textContent = `Pausing ${data.seconds} s before batch ${data.nextBatch} of ${stats.totalBatches}`;
+        this.monitorSubText.textContent = `${cm.campaignName} · pausing ${data.seconds} s before batch ${data.nextBatch} of ${stats.totalBatches}`;
       } else if (state === 'running') {
         this.monitorSubText.textContent = `${cm.campaignName} · batch ${stats.currentBatchIndex + 1} of ${stats.totalBatches}`;
-      } else if (state === 'completed' || state === 'cancelled') {
+      } else if (['completed', 'cancelled', 'stopped'].includes(state)) {
         this.monitorSubText.textContent = `${cm.campaignName} · ${stats.sentCount} sent, ${stats.failedCount} failed`;
-      } else if (state === 'idle' && event !== 'setup') {
+      } else if (state === 'idle' && event === 'setup') {
+        this.monitorSubText.textContent = cm.campaignName;
+      } else if (state === 'idle') {
         this.monitorSubText.textContent = 'No campaign running';
       }
     }
@@ -1508,7 +1615,6 @@ class BulkApp {
     else this.stopScheduleCountdown();
 
     if (state === 'scheduled') {
-      // Allow cancelling a scheduled campaign (previously there was no way to stop it).
       show(this.btnCancelBatch);
       this.btnSendNow.disabled = false;
       this.btnScheduleSend.disabled = false;
@@ -1522,10 +1628,8 @@ class BulkApp {
       this.btnScheduleSend.disabled = false;
     }
 
-    if (state === 'completed' || state === 'cancelled') {
-      if (stats.failedCount > 0) {
-        show(this.btnRetryFailed);
-      }
+    if (['completed', 'cancelled', 'stopped'].includes(state)) {
+      show(this.btnRetryFailed, stats.failedCount > 0);
       this.updateReportsBadge();
     }
 
@@ -1543,20 +1647,26 @@ class BulkApp {
 
     // Render results in monitor table
     if (event === 'batch_progress' && data.results && data.results.length > 0) {
-      const combined = [...this.campaignManager.allResults, ...data.results];
-      this.renderMonitorResults(combined);
-    } else if (this.campaignManager.allResults.length > 0) {
+      const earlier = this.campaignManager.batches.filter(b => b.index < data.batch.index).flatMap(b => b.results || []);
+      this.renderMonitorResults([...earlier, ...data.results]);
+    } else {
       this.renderMonitorResults(this.campaignManager.allResults);
     }
+
+    this.renderBatchChips(this.batchStrip, this.batchStripWrap, cm.campaignId ? cm.batches.map(b => cm.batchMeta(b)) : []);
+    if (event === 'setup') this.renderMonitorActivity();
+    this.renderChecklist();
+    this.refreshLiveDrilldown();
   }
 
   renderMonitorResults(results) {
     if (this.liveMonitorDrawer?.classList.contains('collapsed') && this.toggleMonitorText) {
-      this.toggleMonitorText.textContent = `Show log (${results.length})`;
+      this.toggleMonitorText.textContent = `Show details (${results.length})`;
     }
 
     // Most recent 50 results first; # is the position in the whole campaign.
     const total = results.length;
+    if (this.countDeliveries) this.countDeliveries.textContent = total.toLocaleString();
     if (!total) {
       this.monitorResultsBody.innerHTML = `<tr><td colspan="6" class="table-empty">${icon('inbox', 28)}<strong>No deliveries yet</strong>Results appear here as each message is sent.</td></tr>`;
       return;
@@ -2533,14 +2643,14 @@ class BulkApp {
   async loadHistoricalCampaigns() {
     const tbody = this.campaignsHistoryBody;
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" class="table-empty"><span class="spinner"></span> Loading campaigns…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty"><span class="spinner"></span> Loading campaigns…</td></tr>';
 
     try {
       const campaigns = await ReportStore.getAllCampaigns();
       this.currentLoadedCampaigns = campaigns;
       this.renderHistoricalCampaignsTable(campaigns);
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" class="table-empty error">Could not load reports: ${this.escape(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="table-empty error">Could not load reports: ${this.escape(err.message)}</td></tr>`;
     }
   }
 
@@ -2549,7 +2659,10 @@ class BulkApp {
     const map = {
       completed: ['ok', 'Completed'],
       in_progress: ['info', 'In progress'],
-      running: ['info', 'Running'],
+      running: ['info', 'Sending now'],
+      scheduled: ['purple', 'Scheduled'],
+      interrupted: ['warn', 'Interrupted'],
+      stopped: ['warn', 'Stopped'],
       cancelled: ['warn', 'Cancelled'],
       failed: ['bad', 'Failed'],
     };
@@ -2577,8 +2690,8 @@ class BulkApp {
 
     if (filtered.length === 0) {
       tbody.innerHTML = query
-        ? `<tr><td colspan="7" class="table-empty">${icon('search', 26)}<strong>No matches</strong>No campaign matches “${this.escape(query)}”.</td></tr>`
-        : `<tr><td colspan="7" class="table-empty">${icon('file', 26)}<strong>No campaigns yet</strong>Every campaign you send is recorded here.</td></tr>`;
+        ? `<tr><td colspan="8" class="table-empty">${icon('search', 26)}<strong>No matches</strong>No campaign matches “${this.escape(query)}”.</td></tr>`
+        : `<tr><td colspan="8" class="table-empty">${icon('file', 26)}<strong>No campaigns yet</strong>Every campaign you send is recorded here.</td></tr>`;
       return;
     }
 
@@ -2591,21 +2704,29 @@ class BulkApp {
       const failed = Number(c.failedCount) || 0;
       const totalMessages = Number(c.totalMessages) || Number(c.totalRecipients) || 0;
       const successPct = totalMessages > 0 ? `${Math.min(100, (sent / totalMessages) * 100).toFixed(1)}%` : '—';
+      const notSent = Math.max(0, totalMessages - sent - failed);
+      const status = this.effectiveStatus(c);
+      const note = status === 'running' ? 'Sending from this page right now.' : (c.statusNote || '');
+      const timing = [
+        c.startedAt ? `started ${new Date(c.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : (c.scheduledFor ? `scheduled for ${new Date(c.scheduledFor).toLocaleString()}` : ''),
+        c.completedAt ? `ended ${new Date(c.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '',
+      ].filter(Boolean).join(' · ');
 
       tr.innerHTML = `
         <td>
           <strong>${this.escape(c.name)}</strong>
-          <span class="cell-sub">${dateStr} · ${Number(c.totalRecipients) || 0} recipients</span>
+          <span class="cell-sub">${dateStr} · ${Number(c.totalRecipients) || 0} recipients · ${totalMessages} messages${timing ? ` · ${timing}` : ''}</span>
           <span class="cell-sub cell-ellipsis" title="${this.escape(c.messagePreview || '')}">${this.escape(c.messagePreview || '—')}</span>
         </td>
         <td class="col-hide-sm"><span class="status-badge info sm">${this.escape(c.sessionName || c.sessionId)}</span></td>
         <td class="num text-ok">${sent}</td>
         <td class="num ${failed > 0 ? 'text-bad' : 'cell-muted'}">${failed}</td>
+        <td class="num col-hide-sm ${notSent > 0 ? 'text-info' : 'cell-muted'}">${notSent}</td>
         <td class="num col-hide-sm text-purple">${successPct}</td>
-        <td class="col-status">${this.campaignStatusBadge(c.status)}</td>
+        <td class="col-status">${this.campaignStatusBadge(status)}${note ? `<span class="cell-note">${this.escape(note)}</span>` : ''}</td>
         <td class="col-action">
           <div class="row-actions">
-            <button class="btn btn-xs btn-primary" data-action="view" title="Recipients and delivery status">${icon('eye', 12)}View</button>
+            <button class="btn btn-xs btn-primary" data-action="view" title="Recipients, delivery status and activity log">${icon('eye', 12)}Details</button>
             <button class="btn btn-xs" data-action="excel" title="Download Excel (.xlsx) report">${icon('download', 12)}Excel</button>
             ${failed > 0 ? `<button class="btn btn-xs" data-action="retry" title="Load failed numbers as recipients">${icon('retry', 12)}Retry</button>` : ''}
             <button class="btn btn-xs btn-ghost-danger" data-action="delete" title="Delete report" aria-label="Delete report ${this.escape(c.name)}">${icon('trash', 12)}</button>
@@ -2623,7 +2744,7 @@ class BulkApp {
     });
   }
 
-  async openCampaignDrilldown(campaignId) {
+  async openCampaignDrilldown(campaignId, { tab, keepView = false } = {}) {
     this.activeDrilldownCampaignId = campaignId;
     if (this.viewBulkCampaigns) hide(this.viewBulkCampaigns);
     if (this.viewCampaignDetailDrilldown) show(this.viewCampaignDetailDrilldown);
@@ -2637,13 +2758,9 @@ class BulkApp {
       }
 
       const { campaign, logs } = data;
+      if (this.activeDrilldownCampaignId !== campaignId) return; // user moved on while loading
       this.currentDrilldownLogs = logs || [];
-
-      if (this.drilldownCampaignTitle) this.drilldownCampaignTitle.textContent = campaign.name;
-      if (this.drilldownSessionBadge) this.drilldownSessionBadge.textContent = campaign.sessionName || campaign.sessionId;
-      if (this.drilldownMetaSubtitle) {
-        this.drilldownMetaSubtitle.textContent = `${new Date(campaign.createdAt).toLocaleString()} · ${campaign.totalRecipients} recipients · ${campaign.sentCount} sent · ${campaign.failedCount} failed`;
-      }
+      this.renderDrilldownSummary(campaign, await ReportStore.getCampaignEvents(campaignId));
 
       const sentLogs = this.currentDrilldownLogs.filter(l => l.status === 'sent');
       const failedLogs = this.currentDrilldownLogs.filter(l => l.status === 'failed');
@@ -2661,10 +2778,13 @@ class BulkApp {
         this.drilldownMessagePreviewText.textContent = campaign.messagePreview || logs[0]?.content || '—';
       }
 
-      this.drilldownFilter = 'all';
-      document.querySelectorAll('.drilldownFilterBtn').forEach(b => {
-        b.classList.toggle('active', b.dataset.filter === 'all');
-      });
+      if (!keepView) {
+        this.drilldownFilter = 'all';
+        document.querySelectorAll('.drilldownFilterBtn').forEach(b => {
+          b.classList.toggle('active', b.dataset.filter === 'all');
+        });
+        this.switchDrillTab(tab || 'recipients');
+      }
 
       this.renderDrilldownNumbersTable();
     } catch (err) {
@@ -2683,7 +2803,7 @@ class BulkApp {
     if (this.drilldownFilter === 'failed') list = list.filter(l => l.status === 'failed');
 
     if (list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="table-empty">No ${this.drilldownFilter === 'all' ? '' : `${this.escape(this.drilldownFilter)} `}records in this campaign.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="table-empty">No ${this.drilldownFilter === 'all' ? '' : `${this.escape(this.drilldownFilter)} `}delivery records yet. The Activity log tab shows every step taken.</td></tr>`;
       return;
     }
 
@@ -2775,8 +2895,14 @@ class BulkApp {
 
   async deleteHistoricalCampaign(campaignId, campaignName) {
     if (!confirm(`Delete campaign report "${campaignName}" from local database? This cannot be undone.`)) return;
+    if (this.campaignManager.campaignId === campaignId && this.campaignManager.isBusy) {
+      this.toast('This campaign is sending right now. Cancel it before deleting its report.', 'warn');
+      return;
+    }
     try {
       await ReportStore.deleteCampaign(campaignId);
+      this.recoveries.delete(campaignId);
+      this.renderRecovery();
       await this.loadReportsKPIs();
       await this.loadHistoricalCampaigns();
     } catch (e) {
@@ -2785,10 +2911,16 @@ class BulkApp {
   }
 
   async clearAllReports() {
+    if (this.campaignManager.isBusy) {
+      this.toast('A campaign is running. Wait for it to finish before clearing all reports.', 'warn');
+      return;
+    }
     if (!confirm('Are you sure you want to clear ALL campaign reports and message audit logs? This cannot be undone.')) return;
     try {
       await ReportStore.clearAllCampaigns();
       await ReportStore.clearAllSingleMessages();
+      this.recoveries.clear();
+      this.renderRecovery();
       await this.loadReportsKPIs();
       await this.loadHistoricalCampaigns();
       this.toast('All campaign reports have been cleared.', 'ok');
@@ -2870,6 +3002,599 @@ class BulkApp {
     }
 
     show(this.modalQrEnlarge);
+  }
+
+  // ========== Status overview, step badges & progress views ==========
+
+  capitalize(str) {
+    const s = String(str || '');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  stateLabel(state) {
+    return {
+      idle: 'Idle',
+      scheduled: 'Scheduled',
+      running: 'Sending',
+      completed: 'Completed',
+      stopped: 'Stopped',
+      cancelled: 'Cancelled',
+    }[state] || this.capitalize(state);
+  }
+
+  /** A stored campaign's status, corrected to "running" when this tab is sending it right now. */
+  effectiveStatus(c) {
+    const cm = this.campaignManager;
+    if (c.id === cm.campaignId && cm.isBusy) return cm.state === 'scheduled' ? 'scheduled' : 'running';
+    return c.status;
+  }
+
+  setBadge(el, tone, text) {
+    if (!el) return;
+    el.className = `status-badge sm ${tone}`;
+    el.textContent = text;
+  }
+
+  /** One-word status chip next to each step title. */
+  renderStepStatus(issues) {
+    const [s1, s2, s3] = this.stepStatus || [];
+    const cm = this.campaignManager;
+    const selected = this.getSelectedRecipients().length;
+
+    if (selected) this.setBadge(s1, 'ok', `${selected.toLocaleString()} selected`);
+    else if (this.records.length) this.setBadge(s1, 'warn', 'None selected');
+    else this.setBadge(s1, '', 'Add recipients');
+
+    const config = this.buildMessageConfig();
+    const blocks = CampaignManager.getTextBlocks(config).length;
+    const hasMedia = CampaignManager.hasMediaPayload(config);
+    const tooLong = issues.some(i => i.level === 'bad' && /over \d+ characters|Caption is/.test(i.text));
+    if (this.mediaTypeSelect.value !== 'text' && !hasMedia) this.setBadge(s2, 'warn', 'File missing');
+    else if (tooLong) this.setBadge(s2, 'bad', 'Too long');
+    else if (!blocks && !hasMedia) this.setBadge(s2, '', 'Write a message');
+    else this.setBadge(s2, 'ok', `${blocks} block${blocks === 1 ? '' : 's'}${hasMedia ? ' + file' : ''}`);
+
+    const blocking = issues.filter(i => i.level === 'bad');
+    if (cm.state === 'running') this.setBadge(s3, 'info', 'Sending');
+    else if (cm.state === 'scheduled') this.setBadge(s3, 'purple', 'Scheduled');
+    else if (!blocking.length) this.setBadge(s3, 'ok', 'Ready to send');
+    else if (blocking[0] === issues[0]) this.setBadge(s3, 'bad', 'Number not ready');
+    else this.setBadge(s3, 'warn', 'Complete steps 1–2');
+  }
+
+  /** Plain-language status for the overview tile and the explanation line in Campaign progress. */
+  renderLiveStatus(issues = this.getSendIssues()) {
+    const cm = this.campaignManager;
+    const s = cm.stats;
+    const state = cm.state;
+    const total = s.totalMessages || s.totalRecipients || 0;
+    const done = s.sentCount + s.failedCount;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const attention = [...this.recoveries.values()].find(v => ['server_running', 'interrupted', 'schedule_lost', 'legacy', 'unreachable'].includes(v.kind));
+    let tileState = state;
+    let title;
+    let text;
+    let explain;
+    let tone = 'info';
+
+    if (state === 'running') {
+      const pausing = this.pauseUntil && this.pauseUntil > Date.now();
+      title = pausing ? `Pausing · next is batch ${s.currentBatchIndex + 2} of ${s.totalBatches}` : `Sending · batch ${s.currentBatchIndex + 1} of ${s.totalBatches}`;
+      text = `${s.sentCount.toLocaleString()} of ${total.toLocaleString()} sent${s.failedCount ? `, ${s.failedCount} failed` : ''}.`;
+      explain = `“${cm.campaignName}” is sending from ${cm.sessionName}. Keep this page open. If it is closed or reloaded, the batch in progress still finishes on the server, but the batches after it wait until you come back and choose Resume.`;
+    } else if (state === 'scheduled') {
+      title = 'Scheduled';
+      text = cm.scheduleTargetTime ? `Starts ${new Date(cm.scheduleTargetTime).toLocaleString()}.` : 'Waiting to start.';
+      explain = `“${cm.campaignName}” starts automatically at ${cm.scheduleTargetTime ? new Date(cm.scheduleTargetTime).toLocaleString() : 'the chosen time'}. The schedule lives in this page: keep it open until then.`;
+      tone = 'info';
+    } else if (state === 'completed') {
+      title = 'Completed';
+      text = `${s.sentCount} sent, ${s.failedCount} failed.`;
+      explain = `“${cm.campaignName}” finished: ${s.sentCount} sent, ${s.failedCount} failed. Reports has the full delivery list and the activity log.`;
+      tone = s.failedCount ? 'warn' : 'ok';
+    } else if (state === 'stopped') {
+      title = 'Stopped';
+      text = `${s.sentCount} sent, ${s.pendingCount} not sent.`;
+      explain = `${cm.haltReason || cm.stopNote || 'The campaign stopped.'} ${s.sentCount} sent, ${s.failedCount} failed, ${s.pendingCount} not sent.`;
+      tone = 'warn';
+    } else if (state === 'cancelled') {
+      title = 'Cancelled';
+      text = `${s.sentCount} sent before cancelling.`;
+      explain = `“${cm.campaignName}” was cancelled. ${s.sentCount} messages had already been sent; the rest were not.`;
+      tone = 'warn';
+    } else if (attention) {
+      tileState = 'interrupted';
+      title = 'Needs your attention';
+      text = 'A campaign did not finish. See the notice at the top.';
+      explain = `“${attention.campaign?.name || 'A campaign'}” did not finish because its page was closed or reloaded. Use the notice at the top of the page to resume or stop it.`;
+      tone = 'warn';
+    } else {
+      const blocking = issues.filter(i => i.level === 'bad');
+      tileState = blocking.length ? 'idle' : 'completed';
+      title = blocking.length ? 'Setting up' : 'Ready to send';
+      text = blocking.length ? `Next: ${blocking[0].text.charAt(0).toLowerCase()}${blocking[0].text.slice(1)}.` : 'Everything is in place. Choose Send now.';
+      explain = 'Set up recipients and a message above, then choose Send now. Progress and a log of every step appear here.';
+    }
+
+    if (this.statusTile) this.statusTile.dataset.state = tileState;
+    if (this.statusTileTitle) this.statusTileTitle.textContent = title;
+    if (this.statusTileText && !(state === 'scheduled' && this.scheduleCountdownTimer)) this.statusTileText.textContent = text;
+    if (this.statusTileBar) this.statusTileBar.style.width = `${['idle'].includes(state) ? 0 : pct}%`;
+    if (this.monitorExplain) this.monitorExplain.className = `notice compact explain ${tone}`;
+    if (this.monitorExplainText) this.monitorExplainText.textContent = explain;
+  }
+
+  switchMonitorTab(tab) {
+    this.monitorTab = tab;
+    const isActivity = tab === 'activity';
+    this.tabMonitorDeliveries?.classList.toggle('active', !isActivity);
+    this.tabMonitorActivity?.classList.toggle('active', isActivity);
+    this.tabMonitorDeliveries?.setAttribute('aria-selected', String(!isActivity));
+    this.tabMonitorActivity?.setAttribute('aria-selected', String(isActivity));
+    show(this.viewMonitorDeliveries, !isActivity);
+    show(this.viewMonitorActivity, isActivity);
+  }
+
+  switchDrillTab(tab) {
+    this.drillTab = tab;
+    const isActivity = tab === 'activity';
+    this.tabDrillRecipients?.classList.toggle('active', !isActivity);
+    this.tabDrillActivity?.classList.toggle('active', isActivity);
+    this.tabDrillRecipients?.setAttribute('aria-selected', String(!isActivity));
+    this.tabDrillActivity?.setAttribute('aria-selected', String(isActivity));
+    show(this.drillViewRecipients, !isActivity);
+    show(this.drillViewActivity, isActivity);
+  }
+
+  renderMonitorActivity() {
+    const events = this.campaignManager.events || [];
+    if (this.countActivity) this.countActivity.textContent = events.length.toLocaleString();
+    this.renderActivityList(this.activityList, events);
+  }
+
+  /** Activity log rows, newest first, with a date row whenever the day changes. */
+  renderActivityList(el, events) {
+    if (!el) return;
+    if (!events.length) {
+      el.innerHTML = '<li class="empty-row"><span class="empty">No actions recorded yet. Every step of a campaign (start, each batch, pauses, cancels, reloads, resumes) is listed here.</span></li>';
+      return;
+    }
+    const glyph = { ok: 'check', warn: 'alert', bad: 'alert', info: 'info' };
+    let lastDay = '';
+    const rows = [];
+    [...events].sort((a, b) => b.ts - a.ts).forEach(e => {
+      const d = new Date(e.ts);
+      const day = d.toDateString();
+      if (day !== lastDay) {
+        lastDay = day;
+        rows.push(`<li class="day-row"><span class="day">${this.escape(d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }))}</span></li>`);
+      }
+      rows.push(`<li class="${this.escape(e.level)}"><time datetime="${d.toISOString()}" title="${this.escape(d.toLocaleString())}">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>${icon(glyph[e.level] || 'info', 15)}<span>${this.escape(e.message)}</span></li>`);
+    });
+    el.innerHTML = rows.join('');
+  }
+
+  /** One chip per batch: done / sending / waiting, with counts. */
+  renderBatchChips(el, wrap, metas) {
+    if (!el) return;
+    show(wrap, metas.length > 0);
+    el.innerHTML = metas.map(m => {
+      const n = (m.index ?? 0) + 1;
+      const total = m.total || 0;
+      const sent = m.sent || 0;
+      const failed = m.failed || 0;
+      let cls = '';
+      let label;
+      switch (m.status) {
+        case 'completed':
+          cls = failed ? 'warn' : 'ok';
+          label = `${sent}/${total} sent${failed ? `, ${failed} failed` : ''}`;
+          break;
+        case 'failed':
+          cls = 'bad';
+          label = sent ? `${sent}/${total} sent, ${failed} failed` : 'failed';
+          break;
+        case 'cancelled':
+          cls = 'warn';
+          label = `cancelled · ${sent}/${total} sent`;
+          break;
+        case 'submitting':
+          cls = 'live';
+          label = 'submitting…';
+          break;
+        case 'processing':
+          cls = 'live';
+          label = `sending ${sent + failed}/${total}`;
+          break;
+        default:
+          label = 'waiting';
+      }
+      return `<span class="batch-chip ${cls}" title="Batch ${n}: ${total} messages for ${m.recipients || '?'} recipients">Batch ${n} · ${this.escape(label)}</span>`;
+    }).join('');
+  }
+
+  // ========== Recovery: campaigns left unfinished by a closed or reloaded page ==========
+
+  async checkOpenCampaigns() {
+    let open = [];
+    try {
+      open = await ReportStore.getOpenCampaigns();
+    } catch (err) {
+      console.warn('Could not look for unfinished campaigns:', err);
+      return;
+    }
+    for (const c of open) {
+      if (c.id === this.campaignManager.campaignId && this.campaignManager.isBusy) continue;
+      await this.inspectOne(c.id, c);
+    }
+    this.renderRecovery();
+    this.renderChecklist();
+  }
+
+  /** Ask the server what happened to one unfinished campaign, record what was learned, keep the verdict. */
+  async inspectOne(id, prev) {
+    let v;
+    try {
+      v = await CampaignManager.inspect(this.api, id);
+    } catch (err) {
+      v = { kind: 'unreachable', campaign: prev, error: err.message };
+    }
+    if (!v || v.kind === 'gone' || !v.campaign) {
+      this.recoveries.delete(id);
+      return;
+    }
+    const before = v.campaign;
+    // Finished elsewhere (another tab completed it) — nothing to recover.
+    if (!OPEN_CAMPAIGN_STATES.includes(before.status)) {
+      this.recoveries.delete(id);
+      return;
+    }
+
+    const firstNotice = ['in_progress', 'running', 'scheduled'].includes(before.status) && v.kind !== 'other_tab' && v.kind !== 'unreachable';
+    if (firstNotice) {
+      const last = before.heartbeatAt ? ` Last activity from that page: ${new Date(before.heartbeatAt).toLocaleString()}.` : '';
+      const what = v.kind === 'schedule_lost'
+        ? 'The page holding this schedule was closed or reloaded, so it will not start on its own.'
+        : 'The page was closed or reloaded while this campaign was sending.';
+      await ReportStore.addCampaignEvent(id, { level: 'warn', type: 'page_closed', message: `${what}${last}` });
+    }
+    for (const msg of v.learned || []) {
+      await ReportStore.addCampaignEvent(id, { level: 'info', type: 'server_check', message: msg });
+    }
+
+    const c = v.campaign;
+    const totalMsgs = c.totalMessages || c.totalRecipients || 0;
+    let note = '';
+    if (v.kind === 'server_running') {
+      note = `Paused by a page reload. Batch ${v.active.meta.index + 1} of ${v.totalBatches} is still being sent by the server; ${v.remainingBatches} batch${v.remainingBatches === 1 ? '' : 'es'} after it wait until you resume.`;
+    } else if (v.kind === 'interrupted') {
+      note = `Interrupted by a page reload after ${v.finishedBatches} of ${v.totalBatches} batches. ${c.pendingCount} message${c.pendingCount === 1 ? ' was' : 's were'} not sent.`;
+    } else if (v.kind === 'legacy') {
+      note = 'Interrupted by a page reload. It was started before progress tracking existed, so it cannot be resumed.';
+    } else if (v.kind === 'schedule_lost') {
+      note = v.missed
+        ? `Its start time (${new Date(c.scheduledFor).toLocaleString()}) passed while the page was closed. Nothing was sent.`
+        : `Scheduled for ${new Date(c.scheduledFor).toLocaleString()}, but the page holding the schedule was closed. Re-arm it to keep it.`;
+    }
+
+    if (note) {
+      await ReportStore.updateCampaign(id, { status: 'interrupted', statusNote: note });
+      c.status = 'interrupted';
+      c.statusNote = note;
+    } else if (v.kind === 'finished') {
+      note = `Finished on the server while the page was closed: ${c.sentCount} of ${totalMsgs} sent, ${c.failedCount} failed.`;
+      await ReportStore.updateCampaign(id, { status: 'completed', completedAt: Date.now(), statusNote: note });
+      await ReportStore.addCampaignEvent(id, { level: c.failedCount ? 'warn' : 'ok', type: 'finished_while_closed', message: note });
+      await ReportStore.deleteCampaignPlan(id);
+      c.status = 'completed';
+      c.statusNote = note;
+      this.updateReportsBadge();
+    }
+
+    this.recoveries.set(id, v);
+    if (v.kind === 'server_running' || v.kind === 'other_tab') this.scheduleRecheck();
+  }
+
+  /** While a batch is still running on the server (or in another tab), refresh its card every few seconds. */
+  scheduleRecheck() {
+    clearTimeout(this.recheckTimer);
+    this.recheckTimer = setTimeout(async () => {
+      const live = [...this.recoveries.values()].filter(v => v.kind === 'server_running' || v.kind === 'other_tab');
+      for (const v of live) await this.inspectOne(v.campaign.id, v.campaign);
+      this.renderRecovery();
+      this.renderChecklist();
+    }, 5000);
+  }
+
+  renderRecovery() {
+    const host = this.recoveryHost;
+    if (!host) return;
+    const cards = [...this.recoveries.values()].map(v => this.recoveryCard(v)).filter(Boolean);
+    host.innerHTML = cards.join('');
+    show(host, cards.length > 0);
+  }
+
+  recoveryCard(v) {
+    const c = v.campaign;
+    if (!c) return '';
+    const id = this.escape(c.id);
+    const name = this.escape(c.name);
+    const total = c.totalMessages || c.totalRecipients || 0;
+    const btn = (action, label, cls = '', glyph = '') =>
+      `<button class="btn btn-sm ${cls}" data-recovery="${action}" data-id="${id}">${glyph ? icon(glyph, 14) : ''}<span>${label}</span></button>`;
+    const viewLog = btn('view', 'View activity log', '', 'file');
+    const facts = `<div class="recovery-facts">
+        <div><span>Sent</span><strong class="text-ok">${(c.sentCount || 0).toLocaleString()}</strong></div>
+        <div><span>Failed</span><strong class="${c.failedCount ? 'text-bad' : ''}">${(c.failedCount || 0).toLocaleString()}</strong></div>
+        <div><span>Not sent yet</span><strong class="text-info">${Math.max(0, total - (c.sentCount || 0) - (c.failedCount || 0)).toLocaleString()}</strong></div>
+        <div><span>Batches finished</span><strong>${v.finishedBatches ?? '—'} / ${v.totalBatches ?? c.totalBatches ?? '—'}</strong></div>
+      </div>`;
+    const lastSeen = c.heartbeatAt ? `<span class="meta-text">Last activity ${this.escape(new Date(c.heartbeatAt).toLocaleString())}</span>` : '';
+    const noPlan = v.plan ? '' : ' Its recipient list was not saved, so it cannot be resumed.';
+    let tone = 'warn';
+    let glyph = 'alert';
+    let title;
+    let body;
+    let actions;
+
+    switch (v.kind) {
+      case 'server_running': {
+        const p = v.active.progress || {};
+        title = `“${name}” is still sending on the server <span class="status-badge sm warn">Paused by page reload</span>`;
+        body = `The page was closed or reloaded during this campaign. The server is still sending batch ${v.active.meta.index + 1} of ${v.totalBatches} (${(p.sent || 0) + (p.failed || 0)} of ${p.total || v.active.meta.total} done). ${v.remainingBatches ? `The ${v.remainingBatches} batch${v.remainingBatches === 1 ? '' : 'es'} after it will not start until you choose Resume.` : 'It is the last batch, so the campaign will complete on its own.'}${noPlan}`;
+        actions = [v.plan ? btn('resume', 'Resume sending', 'btn-primary', 'play') : '', btn('stop', 'Stop campaign', 'btn-danger', 'stop'), viewLog, lastSeen];
+        break;
+      }
+      case 'interrupted':
+        title = `“${name}” was interrupted <span class="status-badge sm warn">Not finished</span>`;
+        body = `The page was closed or reloaded while sending. ${v.finishedBatches} of ${v.totalBatches} batches finished; ${v.remainingBatches === 1 ? 'the other batch was' : `the other ${v.remainingBatches} batches were`} never sent. Resume continues with the first unsent batch, so nobody is messaged twice.${noPlan}`;
+        actions = [v.plan ? btn('resume', 'Resume sending', 'btn-primary', 'play') : '', btn('stop', 'Stop and close report', 'btn-danger', 'stop'), viewLog, lastSeen];
+        break;
+      case 'finished':
+        tone = 'ok';
+        glyph = 'check';
+        title = `“${name}” finished while the page was closed <span class="status-badge sm ok">Completed</span>`;
+        body = `The last batch was already on the server, so it completed without this page. ${c.sentCount} of ${total} sent, ${c.failedCount} failed.`;
+        actions = [btn('view', 'Open report', 'btn-primary', 'file'), btn('dismiss', 'Dismiss')];
+        break;
+      case 'schedule_lost':
+        tone = 'info';
+        glyph = 'calendar';
+        title = `Scheduled campaign “${name}” ${v.missed ? 'missed its start time' : 'needs to be re-armed'}`;
+        body = `${this.escape(c.statusNote || '')} Schedules only run while the page that created them is open.${noPlan}`;
+        actions = [
+          v.plan && !v.missed ? btn('rearm', 'Re-arm schedule', 'btn-primary', 'calendar') : '',
+          v.plan ? btn('start_now', 'Send now', v.missed ? 'btn-primary' : '', 'send') : '',
+          btn('cancel_schedule', 'Cancel it', 'btn-ghost-danger', 'x'),
+          viewLog,
+        ];
+        return this.recoveryShell(tone, glyph, title, body, '', actions);
+      case 'other_tab':
+        tone = 'info';
+        glyph = 'activity';
+        title = `“${name}” is being sent from another open tab`;
+        body = 'That tab controls this campaign. These numbers refresh every few seconds; to stop it, use Cancel in that tab.';
+        actions = [viewLog];
+        break;
+      case 'unreachable':
+        tone = 'bad';
+        title = `Can't check “${name}”`;
+        body = `This campaign did not finish, but the server could not be reached to see what happened (${this.escape(v.error || 'no response')}). Nothing will be sent until you check again.`;
+        actions = [btn('recheck', 'Check again', 'btn-primary', 'refresh'), viewLog];
+        break;
+      case 'legacy':
+        title = `“${name}” stopped when the page was reloaded`;
+        body = `It was started before progress tracking was added, so its remaining batches cannot be resumed. ${c.sentCount || 0} sent and ${c.failedCount || 0} failed were recorded; the rest were not sent.`;
+        actions = [btn('close_legacy', 'Close report', 'btn-primary', 'check'), viewLog];
+        break;
+      default:
+        return '';
+    }
+    return this.recoveryShell(tone, glyph, title, body, facts, actions);
+  }
+
+  recoveryShell(tone, glyph, title, body, facts, actions) {
+    return `<section class="recovery ${tone}" role="status">
+      <div class="recovery-head">${icon(glyph, 20)}<div><h3>${title}</h3><p>${body}</p></div></div>
+      ${facts}
+      <div class="recovery-actions">${actions.filter(Boolean).join('')}</div>
+    </section>`;
+  }
+
+  async handleRecoveryAction(action, id, button) {
+    if (!id) return;
+    if (button) button.disabled = true;
+    try {
+      switch (action) {
+        case 'view':
+          await this.openReportsModal();
+          await this.openCampaignDrilldown(id, { tab: 'activity' });
+          return;
+        case 'dismiss':
+          this.recoveries.delete(id);
+          this.renderRecovery();
+          this.renderChecklist();
+          return;
+        case 'recheck':
+          await this.inspectOne(id, this.recoveries.get(id)?.campaign);
+          this.renderRecovery();
+          this.renderChecklist();
+          return;
+        default:
+          break;
+      }
+
+      // Everything else acts on the latest truth from the server.
+      const verdict = await CampaignManager.inspect(this.api, id).catch(err => ({ kind: 'unreachable', error: err.message, campaign: this.recoveries.get(id)?.campaign }));
+      if (verdict.kind === 'other_tab') {
+        this.toast('Another open tab is sending this campaign. Use that tab to control it.', 'warn');
+        return;
+      }
+      if (verdict.kind === 'unreachable') {
+        this.toast(`The server could not be reached: ${verdict.error}`, 'bad');
+        return;
+      }
+
+      if (action === 'resume' || action === 'start_now' || action === 'rearm') {
+        await this.resumeOrphan(verdict, action === 'rearm' ? 'schedule' : 'start');
+        return;
+      }
+
+      const name = verdict.campaign?.name || 'this campaign';
+      if (action === 'stop') {
+        if (verdict.kind === 'finished') {
+          await this.inspectOne(id, verdict.campaign);
+          this.toast(`“${name}” had already finished.`, 'info');
+        } else {
+          const msg = verdict.active
+            ? `Stop “${name}”?\n\nThe batch the server is sending now will be cancelled, and the remaining batches will not be sent. Messages already delivered cannot be recalled.`
+            : `Stop “${name}”?\n\nThe batches that were never sent will not be sent. The report is kept.`;
+          if (!confirm(msg)) return;
+          const note = await CampaignManager.stopOrphan(this.api, verdict, 'Stopped by user after the page was reloaded.');
+          this.recoveries.delete(id);
+          this.toast(note, 'warn', 9000);
+        }
+      } else if (action === 'cancel_schedule') {
+        if (!confirm(`Cancel the scheduled campaign “${name}”? Nothing has been sent.`)) return;
+        const note = 'Scheduled campaign cancelled after the page was reloaded. Nothing was sent.';
+        await ReportStore.updateCampaign(id, { status: 'cancelled', completedAt: Date.now(), statusNote: note });
+        await ReportStore.addCampaignEvent(id, { level: 'warn', type: 'schedule_cancelled', message: note });
+        await ReportStore.deleteCampaignPlan(id);
+        this.recoveries.delete(id);
+        this.toast(note, 'info');
+      } else if (action === 'close_legacy') {
+        const c = verdict.campaign || {};
+        const note = `Closed by user after a page reload. ${c.sentCount || 0} sent, ${c.failedCount || 0} failed; the remaining messages were not sent.`;
+        await ReportStore.updateCampaign(id, { status: 'stopped', completedAt: Date.now(), statusNote: note });
+        await ReportStore.addCampaignEvent(id, { level: 'warn', type: 'closed', message: note });
+        this.recoveries.delete(id);
+      }
+      this.renderRecovery();
+      this.renderChecklist();
+      this.updateReportsBadge();
+      if (this.modalReportsHistory && !this.modalReportsHistory.hidden) await this.refreshCurrentReportsView();
+    } catch (err) {
+      this.toast(`Could not complete that: ${err.message}`, 'bad');
+    } finally {
+      if (button?.isConnected) button.disabled = false;
+    }
+  }
+
+  /** Take over an unfinished campaign in this tab and continue (or re-arm) it. */
+  async resumeOrphan(verdict, mode) {
+    const cm = this.campaignManager;
+    const c = verdict.campaign;
+    if (cm.isBusy) {
+      this.toast('Another campaign is running in this page. Wait for it to finish first.', 'warn');
+      return;
+    }
+    if (!['server_running', 'interrupted', 'schedule_lost'].includes(verdict.kind)) {
+      await this.inspectOne(c.id, c);
+      this.renderRecovery();
+      this.toast(verdict.kind === 'finished' ? `“${c.name}” has already finished.` : 'This campaign cannot be resumed.', 'info');
+      return;
+    }
+    if (!verdict.plan) {
+      this.toast('This campaign cannot be resumed: its recipient list was not saved.', 'bad');
+      return;
+    }
+    const session = this.sessions.find(s => s.id === c.sessionId);
+    if (!session) {
+      this.toast(`The number this campaign used (${c.sessionName || c.sessionId}) no longer exists.`, 'bad');
+      return;
+    }
+    if (session.status !== 'ready' && !verdict.active) {
+      this.toast(`Number “${session.name || session.id}” is ${this.statusLabel(session.status)}. Connect it in Manage numbers, then resume.`, 'bad', 10000);
+      return;
+    }
+
+    const logs = verdict.logs || (await ReportStore.getCampaignDetails(c.id))?.logs || [];
+    await cm.resumeFrom(c, verdict.plan, logs);
+    this.recoveries.delete(c.id);
+    this.renderRecovery();
+    if (this.modalReportsHistory && !this.modalReportsHistory.hidden) this.closeModal(this.modalReportsHistory);
+    hide(this.btnRetryFailed);
+
+    if (mode === 'schedule' && c.scheduledFor > Date.now()) {
+      cm.log('info', 'schedule_rearmed', `Schedule re-armed after the page was reloaded. Starts ${new Date(c.scheduledFor).toLocaleString()}.`);
+      await cm.schedule(new Date(c.scheduledFor));
+      this.toast(`Schedule re-armed for ${new Date(c.scheduledFor).toLocaleString()}. Keep this page open.`, 'ok');
+      return;
+    }
+
+    cm.log('info', 'resume_requested', verdict.active
+      ? 'Resume chosen after the page was reloaded. Watching the batch the server is sending, then continuing.'
+      : verdict.kind === 'schedule_lost' ? 'Send now chosen for a schedule that was lost in a page reload.' : 'Resume chosen after the page was reloaded.');
+    this.toggleMonitorDrawer(true);
+    this.liveMonitorDrawer?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    try {
+      await cm.start();
+    } catch (err) {
+      this.toast(`Could not resume: ${err.message}`, 'bad');
+    }
+  }
+
+  // ========== Report detail summary ==========
+
+  renderDrilldownSummary(campaign, events) {
+    const cm = this.campaignManager;
+    const live = campaign.id === cm.campaignId && cm.isBusy;
+    const status = this.effectiveStatus(campaign);
+    const totalMessages = Number(campaign.totalMessages) || Number(campaign.totalRecipients) || 0;
+    const sent = live ? cm.stats.sentCount : Number(campaign.sentCount) || 0;
+    const failed = live ? cm.stats.failedCount : Number(campaign.failedCount) || 0;
+
+    if (this.drilldownCampaignTitle) this.drilldownCampaignTitle.textContent = campaign.name;
+    if (this.drilldownStatusBadge) this.drilldownStatusBadge.innerHTML = this.campaignStatusBadge(status);
+    if (this.drilldownSessionBadge) this.drilldownSessionBadge.textContent = campaign.sessionName || campaign.sessionId;
+    if (this.drilldownMetaSubtitle) {
+      const parts = [`Created ${new Date(campaign.createdAt).toLocaleString()}`];
+      if (campaign.startedAt) parts.push(`started ${new Date(campaign.startedAt).toLocaleString()}`);
+      if (campaign.completedAt) parts.push(`ended ${new Date(campaign.completedAt).toLocaleString()}`);
+      if (campaign.options?.delayBetweenMessages) parts.push(`${(campaign.options.delayBetweenMessages / 1000).toFixed(1)} s between messages`);
+      this.drilldownMetaSubtitle.textContent = parts.join(' · ');
+    }
+
+    if (this.drillKpiRecipients) this.drillKpiRecipients.textContent = (Number(campaign.totalRecipients) || 0).toLocaleString();
+    if (this.drillKpiMessages) this.drillKpiMessages.textContent = totalMessages.toLocaleString();
+    if (this.drillKpiSent) this.drillKpiSent.textContent = sent.toLocaleString();
+    if (this.drillKpiFailed) this.drillKpiFailed.textContent = failed.toLocaleString();
+    if (this.drillKpiPending) this.drillKpiPending.textContent = Math.max(0, totalMessages - sent - failed).toLocaleString();
+
+    const open = !live && OPEN_CAMPAIGN_STATES.includes(campaign.status);
+    const note = live
+      ? (cm.state === 'scheduled' ? 'Scheduled from this page. It starts automatically while this page stays open.' : 'Sending from this page right now. Figures update as each batch finishes.')
+      : campaign.statusNote || {
+        completed: 'Finished.',
+        cancelled: 'Cancelled. Messages already sent were not recalled.',
+        stopped: 'Stopped before every message was sent.',
+      }[campaign.status] || '';
+    if (this.drilldownNote) {
+      this.drilldownNote.className = `notice compact ${open || ['stopped', 'cancelled'].includes(status) ? 'warn' : status === 'completed' ? 'ok' : 'info'}`;
+      show(this.drilldownNote, Boolean(note) || open);
+    }
+    if (this.drilldownNoteText) this.drilldownNoteText.textContent = note || 'This campaign did not finish.';
+    show(this.btnDrillResume, open && campaign.status !== 'scheduled');
+    show(this.btnDrillStop, open);
+
+    const metas = live ? cm.batches.map(b => cm.batchMeta(b)) : (campaign.batches || []);
+    this.renderBatchChips(this.drillBatchStrip, this.drillBatchWrap, metas);
+
+    const list = live ? cm.events : events;
+    if (this.drilldownCountEvents) this.drilldownCountEvents.textContent = list.length.toLocaleString();
+    this.renderActivityList(this.drilldownActivityList, list);
+  }
+
+  /** Keep an open report detail of the campaign this tab is sending in step with it (throttled). */
+  refreshLiveDrilldown() {
+    const cm = this.campaignManager;
+    if (!this.modalReportsHistory || this.modalReportsHistory.hidden) return;
+    if (!this.activeDrilldownCampaignId || this.activeDrilldownCampaignId !== cm.campaignId) return;
+    if (this.drillRefreshTimer) return;
+    this.drillRefreshTimer = setTimeout(() => {
+      this.drillRefreshTimer = null;
+      if (this.activeDrilldownCampaignId === cm.campaignId) this.openCampaignDrilldown(cm.campaignId, { keepView: true });
+    }, 1500);
   }
 
   escape(str) {

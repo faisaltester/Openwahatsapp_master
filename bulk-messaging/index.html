@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bulk Campaign · OpenWA</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2325d366'><circle cx='12' cy='12' r='10'/></svg>" />
-    <link rel="stylesheet" href="./styles.css?v=20261112c" />
-    <script src="./theme.js?v=20261112c"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261112d" />
+    <script src="./theme.js?v=20261112d"></script>
     <!-- Offline vendor libraries -->
     <script src="./vendor/papaparse.min.js"></script>
     <script src="./vendor/xlsx.full.min.js"></script>
@@ -38,49 +38,82 @@
         </div>
       </header>
 
-      <!-- ================= Session Bar ================= -->
-      <section class="session-bar card" aria-label="WhatsApp number">
-        <div class="session-main">
-          <span class="session-avatar"><i data-icon="phone" data-size="18"></i></span>
-          <div class="session-field">
-            <label for="sessionSelect">Sending number</label>
+      <!-- ================= Recovery (unfinished campaigns found after a reload) ================= -->
+      <div id="recoveryHost" class="recovery-host" aria-live="polite" hidden></div>
+
+      <!-- ================= Connection ================= -->
+      <section class="card section-card" aria-labelledby="ttlConnection">
+        <div class="section-head">
+          <div class="section-heading">
+            <h2 id="ttlConnection" class="section-title"><i data-icon="shield" data-size="17"></i>Connection</h2>
+            <p class="section-sub">The WhatsApp number your messages are sent from, and its link to the server.</p>
+          </div>
+          <div class="row-gap">
+            <button id="btnRefreshSessions" class="btn btn-sm" title="Check the connection again"><i data-icon="refresh" data-size="14"></i><span>Refresh</span></button>
+            <button id="btnOpenSessionManager" class="btn btn-sm"><i data-icon="qr" data-size="14"></i><span>Manage numbers</span></button>
+          </div>
+        </div>
+
+        <div class="conn-grid">
+          <div class="conn-tile conn-number">
+            <label for="sessionSelect" class="tile-label">Sending number</label>
             <div class="select-wrap">
               <select id="sessionSelect" class="input">
                 <option value="">Loading sessions…</option>
               </select>
             </div>
+            <div class="tile-line">
+              <span id="sessionStatusPill" class="status-badge neutral">Checking…</span>
+              <span id="activeSessionNameTag" class="meta-text">—</span>
+            </div>
           </div>
-          <span id="sessionStatusPill" class="status-badge neutral">Checking…</span>
-        </div>
-        <div class="session-meta">
-          <span id="activeSessionNameTag" class="meta-text">—</span>
-          <span id="waReadyStatusTag" class="status-dot neutral">WhatsApp: checking</span>
-          <span id="apiConnectionStatus" class="status-dot neutral">API: checking</span>
-          <span id="internetStatusTag" class="status-dot ok">Online</span>
-        </div>
-        <div class="session-actions">
-          <button id="btnRefreshSessions" class="btn btn-icon" title="Refresh session status" aria-label="Refresh sessions"><i data-icon="refresh"></i></button>
-          <button id="btnOpenSessionManager" class="btn"><i data-icon="qr"></i><span>Manage numbers</span></button>
+          <div class="conn-tile">
+            <span class="tile-label">WhatsApp</span>
+            <strong id="waReadyStatusTag" class="status-dot neutral">Checking…</strong>
+            <small class="tile-hint">The number must be linked and ready.</small>
+          </div>
+          <div class="conn-tile">
+            <span class="tile-label">Server</span>
+            <strong id="apiConnectionStatus" class="status-dot neutral">Checking…</strong>
+            <small class="tile-hint">OpenWA gateway that delivers the messages.</small>
+          </div>
+          <div class="conn-tile">
+            <span class="tile-label">Internet</span>
+            <strong id="internetStatusTag" class="status-dot ok">Online</strong>
+            <small class="tile-hint">This browser's connection.</small>
+          </div>
         </div>
       </section>
 
-      <!-- ================= KPI Strip ================= -->
-      <section class="kpi-grid" aria-label="Campaign summary">
-        <div class="kpi card">
-          <span class="kpi-icon green"><i data-icon="users" data-size="18"></i></span>
-          <div><span class="kpi-label">Recipients selected</span><strong id="kpiRecipients">0</strong></div>
-        </div>
-        <div class="kpi card">
-          <span class="kpi-icon blue"><i data-icon="message" data-size="18"></i></span>
-          <div><span class="kpi-label">Messages to send</span><strong id="kpiMessages">0</strong></div>
-        </div>
-        <div class="kpi card">
-          <span class="kpi-icon purple"><i data-icon="layers" data-size="18"></i></span>
-          <div><span class="kpi-label">API batches</span><strong id="kpiBatches">0</strong></div>
-        </div>
-        <div class="kpi card">
-          <span class="kpi-icon amber"><i data-icon="clock" data-size="18"></i></span>
-          <div><span class="kpi-label">Estimated duration</span><strong id="kpiDuration">—</strong></div>
+      <!-- ================= Overview ================= -->
+      <section class="overview" aria-labelledby="ttlOverview">
+        <h2 id="ttlOverview" class="section-label">Campaign overview</h2>
+        <div class="kpi-grid">
+          <button type="button" id="statusTile" class="kpi card kpi-status" data-state="idle" title="Go to campaign progress">
+            <span class="kpi-icon blue"><i data-icon="activity" data-size="18"></i></span>
+            <div>
+              <span class="kpi-label">Current status</span>
+              <strong id="statusTileTitle">Ready to set up</strong>
+              <small id="statusTileText" class="kpi-sub">No campaign is running.</small>
+              <span class="mini-track"><span id="statusTileBar" class="mini-fill"></span></span>
+            </div>
+          </button>
+          <div class="kpi card">
+            <span class="kpi-icon green"><i data-icon="users" data-size="18"></i></span>
+            <div><span class="kpi-label">Recipients</span><strong id="kpiRecipients">0</strong><small class="kpi-sub">selected to receive it</small></div>
+          </div>
+          <div class="kpi card">
+            <span class="kpi-icon blue"><i data-icon="message" data-size="18"></i></span>
+            <div><span class="kpi-label">Messages</span><strong id="kpiMessages">0</strong><small id="kpiMessagesSub" class="kpi-sub">1 per recipient</small></div>
+          </div>
+          <div class="kpi card">
+            <span class="kpi-icon purple"><i data-icon="layers" data-size="18"></i></span>
+            <div><span class="kpi-label">Batches</span><strong id="kpiBatches">0</strong><small class="kpi-sub">groups of up to 100 messages</small></div>
+          </div>
+          <div class="kpi card">
+            <span class="kpi-icon amber"><i data-icon="clock" data-size="18"></i></span>
+            <div><span class="kpi-label">Estimated time</span><strong id="kpiDuration">—</strong><small class="kpi-sub">at the chosen speed</small></div>
+          </div>
         </div>
       </section>
 
@@ -92,8 +125,8 @@
             <div class="panel-title">
               <span class="step">1</span>
               <div>
-                <h2>Recipients</h2>
-                <p>Excel, CSV or your WhatsApp contacts</p>
+                <h2>Recipients <span id="stepStatus1" class="status-badge sm">Not started</span></h2>
+                <p>Who receives the message: Excel, CSV or WhatsApp contacts</p>
               </div>
             </div>
             <div class="panel-tools">
@@ -179,8 +212,8 @@
             <div class="panel-title">
               <span class="step">2</span>
               <div>
-                <h2>Message</h2>
-                <p>Each block is sent as its own message, in order</p>
+                <h2>Message <span id="stepStatus2" class="status-badge sm">Not started</span></h2>
+                <p>What they receive. Each block is sent as its own message, in order</p>
               </div>
             </div>
             <div class="panel-tools">
@@ -281,8 +314,8 @@
             <div class="panel-title">
               <span class="step">3</span>
               <div>
-                <h2>Delivery</h2>
-                <p>Pacing keeps your number safe</p>
+                <h2>Delivery <span id="stepStatus3" class="status-badge sm">Waiting</span></h2>
+                <p>How fast to send. Slower pacing keeps your number safe</p>
               </div>
             </div>
           </div>
@@ -359,13 +392,13 @@
         </section>
       </main>
 
-      <!-- ================= Live Monitor ================= -->
-      <section class="card monitor" id="liveMonitorDrawer">
+      <!-- ================= Campaign progress ================= -->
+      <section class="card monitor" id="liveMonitorDrawer" data-state="idle" aria-labelledby="ttlMonitor">
         <div class="monitor-head" id="monitorHeaderBar">
           <div class="monitor-title">
             <span class="kpi-icon blue"><i data-icon="activity" data-size="18"></i></span>
             <div>
-              <h2>Live delivery</h2>
+              <h2 id="ttlMonitor">Campaign progress</h2>
               <p><span id="monitorStatusText" class="state-badge" data-state="idle">Idle</span><span id="monitorSubText" class="meta-text">No campaign running</span></p>
             </div>
           </div>
@@ -374,8 +407,13 @@
             <button id="btnRetryFailed" class="btn btn-sm" hidden><i data-icon="retry" data-size="14"></i><span>Retry failed</span></button>
             <button id="btnExportResultsExcel" class="btn btn-sm" title="Export the delivery report to Excel (.xlsx)"><i data-icon="download" data-size="14"></i><span>Excel</span></button>
             <button id="btnExportResults" class="btn btn-sm" title="Export the delivery report to CSV"><i data-icon="download" data-size="14"></i><span>CSV</span></button>
-            <button id="btnToggleMonitor" class="btn btn-sm" aria-expanded="true"><span id="toggleMonitorIcon" class="chev">▾</span><span id="toggleMonitorText">Hide log</span></button>
+            <button id="btnToggleMonitor" class="btn btn-sm" aria-expanded="true"><span id="toggleMonitorIcon" class="chev">▾</span><span id="toggleMonitorText">Hide details</span></button>
           </div>
+        </div>
+
+        <div id="monitorExplain" class="notice info compact explain">
+          <i data-icon="info" data-size="16"></i>
+          <div class="notice-body"><span id="monitorExplainText">Set up recipients and a message above, then choose Send now. Progress and a log of every step appear here.</span></div>
         </div>
 
         <div class="progress-row">
@@ -384,14 +422,24 @@
         </div>
 
         <div class="monitor-stats">
-          <div><span>Total</span><strong id="statTotal">0</strong></div>
+          <div><span>Total messages</span><strong id="statTotal">0</strong></div>
           <div class="ok"><span>Sent</span><strong id="statSent">0</strong></div>
           <div class="bad"><span>Failed</span><strong id="statFailed">0</strong></div>
-          <div class="info"><span>Pending</span><strong id="statPending">0</strong></div>
+          <div class="info"><span>Waiting</span><strong id="statPending">0</strong></div>
         </div>
 
         <div class="monitor-body">
-          <div class="table-wrap monitor-wrap">
+          <div id="batchStripWrap" class="batch-wrap" hidden>
+            <span class="section-label">Batches</span>
+            <div id="batchStrip" class="batch-strip"></div>
+          </div>
+
+          <div class="seg" role="tablist" aria-label="Progress views">
+            <button id="tabMonitorDeliveries" class="seg-btn active" role="tab" aria-selected="true">Deliveries (<span id="countDeliveries">0</span>)</button>
+            <button id="tabMonitorActivity" class="seg-btn" role="tab" aria-selected="false">Activity log (<span id="countActivity">0</span>)</button>
+          </div>
+
+          <div id="viewMonitorDeliveries" class="table-wrap monitor-wrap">
             <table class="data-table monitor-table" id="monitorResultsTable">
               <thead>
                 <tr>
@@ -405,6 +453,10 @@
               </thead>
               <tbody id="monitorResultsBody"></tbody>
             </table>
+          </div>
+
+          <div id="viewMonitorActivity" class="activity-wrap" hidden>
+            <ol id="activityList" class="activity-list"></ol>
           </div>
         </div>
       </section>
@@ -702,6 +754,7 @@
                     <th class="col-hide-sm">Number</th>
                     <th class="num">Sent</th>
                     <th class="num">Failed</th>
+                    <th class="num col-hide-sm">Not sent</th>
                     <th class="num col-hide-sm">Success</th>
                     <th class="col-status">Status</th>
                     <th class="col-action"></th>
@@ -723,30 +776,66 @@
 
           <div id="viewCampaignDetailDrilldown" class="drilldown" hidden>
             <div class="drill-head">
-              <button id="btnBackToCampaignsList" class="btn btn-sm">← Back</button>
+              <button id="btnBackToCampaignsList" class="btn btn-sm">← All campaigns</button>
               <div class="drill-title">
                 <strong id="drilldownCampaignTitle">Campaign</strong>
-                <span id="drilldownSessionBadge" class="status-badge neutral">—</span>
+                <span id="drilldownStatusBadge"></span>
+                <span id="drilldownSessionBadge" class="status-badge info sm">—</span>
                 <small id="drilldownMetaSubtitle" class="meta-text"></small>
               </div>
             </div>
+
+            <div id="drilldownNote" class="notice info compact" hidden>
+              <i data-icon="info" data-size="16"></i>
+              <div class="notice-body"><span id="drilldownNoteText"></span></div>
+              <div class="row-gap">
+                <button id="btnDrillResume" class="btn btn-sm btn-primary" hidden><i data-icon="play" data-size="13"></i>Resume sending</button>
+                <button id="btnDrillStop" class="btn btn-sm btn-danger" hidden><i data-icon="stop" data-size="13"></i>Stop campaign</button>
+              </div>
+            </div>
+
+            <div class="mini-kpis five">
+              <div><span>Recipients</span><strong id="drillKpiRecipients">0</strong></div>
+              <div><span>Messages</span><strong id="drillKpiMessages">0</strong></div>
+              <div><span>Sent</span><strong id="drillKpiSent" class="ok">0</strong></div>
+              <div><span>Failed</span><strong id="drillKpiFailed" class="bad">0</strong></div>
+              <div><span>Not sent</span><strong id="drillKpiPending" class="info">0</strong></div>
+            </div>
+
+            <div id="drillBatchWrap" class="batch-wrap" hidden>
+              <span class="section-label">Batches</span>
+              <div id="drillBatchStrip" class="batch-strip"></div>
+            </div>
+
+            <div class="quote"><strong>Message:</strong> <span id="drilldownMessagePreviewText">—</span></div>
+
             <div class="row-between wrap">
+              <div class="seg" role="tablist" aria-label="Report views">
+                <button id="tabDrillRecipients" class="seg-btn active" role="tab" aria-selected="true">Recipients</button>
+                <button id="tabDrillActivity" class="seg-btn" role="tab" aria-selected="false">Activity log (<span id="drilldownCountEvents">0</span>)</button>
+              </div>
+              <div class="row-gap">
+                <button id="btnRetryFailedFromReport" class="btn btn-sm" hidden>Re-send failed</button>
+                <button id="btnExportSingleCampaignExcel" class="btn btn-sm btn-primary"><i data-icon="download" data-size="13"></i>Excel</button>
+              </div>
+            </div>
+
+            <div id="drillViewRecipients" class="drill-view">
               <div class="seg">
                 <button class="seg-btn drilldownFilterBtn active" data-filter="all">All (<span id="drilldownCountAll">0</span>)</button>
                 <button class="seg-btn drilldownFilterBtn" data-filter="sent">Sent (<span id="drilldownCountSent">0</span>)</button>
                 <button class="seg-btn drilldownFilterBtn" data-filter="failed">Failed (<span id="drilldownCountFailed">0</span>)</button>
               </div>
-              <div class="row-gap">
-                <button id="btnRetryFailedFromReport" class="btn btn-sm btn-danger" hidden>Re-send failed</button>
-                <button id="btnExportSingleCampaignExcel" class="btn btn-sm btn-primary"><i data-icon="download" data-size="13"></i>Excel</button>
+              <div class="table-wrap modal-table">
+                <table class="data-table" id="drilldownNumbersTable">
+                  <thead><tr><th class="col-num">#</th><th>Recipient</th><th class="col-hide-sm">Name</th><th class="col-status">Status</th><th>Detail</th><th class="col-time">Time</th></tr></thead>
+                  <tbody id="drilldownNumbersBody"></tbody>
+                </table>
               </div>
             </div>
-            <div class="quote"><strong>Message:</strong> <span id="drilldownMessagePreviewText">—</span></div>
-            <div class="table-wrap modal-table">
-              <table class="data-table" id="drilldownNumbersTable">
-                <thead><tr><th class="col-num">#</th><th>Recipient</th><th class="col-hide-sm">Name</th><th class="col-status">Status</th><th>Detail</th><th class="col-time">Time</th></tr></thead>
-                <tbody id="drilldownNumbersBody"></tbody>
-              </table>
+
+            <div id="drillViewActivity" class="activity-wrap modal-table" hidden>
+              <ol id="drilldownActivityList" class="activity-list"></ol>
             </div>
           </div>
         </div>
@@ -757,6 +846,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20261112c"></script>
+    <script type="module" src="./app.js?v=20261112d"></script>
   </body>
 </html>
