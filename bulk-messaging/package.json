@@ -1,0 +1,12 @@
+{
+  "name": "openwa-bulk-messaging",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Dedicated Bulk WhatsApp Campaign & Batch Sending Module for OpenWA",
+  "scripts": {
+    "dev": "..\\dashboard\\node_modules\\.bin\\vite.cmd --host 127.0.0.1 --port 3200",
+    "build": "..\\dashboard\\node_modules\\.bin\\vite.cmd build",
+    "preview": "..\\dashboard\\node_modules\\.bin\\vite.cmd preview --port 3200"
+  }
+}
