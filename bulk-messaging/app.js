@@ -2,11 +2,11 @@
  * OpenWA Dedicated Bulk Messaging Module - Main Application Controller
  */
 
-import { OpenWaApiService } from './api-service.js?v=20261112b';
-import { ContactParser } from './contact-parser.js?v=20261112b';
-import { CampaignManager } from './campaign-manager.js?v=20261112b';
-import { ReportStore } from './report-store.js?v=20261112b';
-import { icon, hydrateIcons } from './icons.js?v=20261112b';
+import { OpenWaApiService } from './api-service.js?v=20261112c';
+import { ContactParser } from './contact-parser.js?v=20261112c';
+import { CampaignManager } from './campaign-manager.js?v=20261112c';
+import { ReportStore } from './report-store.js?v=20261112c';
+import { icon, hydrateIcons } from './icons.js?v=20261112c';
 
 /** Visibility is driven by the `hidden` attribute (styles.css: [hidden] { display:none !important }). */
 const show = (el, visible = true) => { if (el) el.hidden = !visible; };

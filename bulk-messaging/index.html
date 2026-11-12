@@ -6,21 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bulk Campaign · OpenWA</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2325d366'><circle cx='12' cy='12' r='10'/></svg>" />
-    <link rel="stylesheet" href="./styles.css?v=20261112b" />
-    <script>
-      // Follow the dashboard theme (openwa_theme: light | dark | system), including live sidebar toggles.
-      (function () {
-        var mq = window.matchMedia('(prefers-color-scheme: dark)');
-        function apply() {
-          var t = null;
-          try { t = localStorage.getItem('openwa_theme'); } catch (e) {}
-          document.documentElement.setAttribute('data-theme', t === 'dark' || (t !== 'light' && mq.matches) ? 'dark' : 'light');
-        }
-        apply();
-        window.addEventListener('storage', function (e) { if (e.key === 'openwa_theme' || e.key === null) apply(); });
-        if (mq.addEventListener) mq.addEventListener('change', apply);
-      })();
-    </script>
+    <link rel="stylesheet" href="./styles.css?v=20261112c" />
+    <script src="./theme.js?v=20261112c"></script>
     <!-- Offline vendor libraries -->
     <script src="./vendor/papaparse.min.js"></script>
     <script src="./vendor/xlsx.full.min.js"></script>
@@ -770,6 +757,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20261112b"></script>
+    <script type="module" src="./app.js?v=20261112c"></script>
   </body>
 </html>

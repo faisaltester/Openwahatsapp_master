@@ -4,7 +4,7 @@
  * polling GET /messages/batch/{batchId}, cancellation, scheduling, retries, and exporting.
  */
 
-import { ReportStore } from './report-store.js?v=20261112b';
+import { ReportStore } from './report-store.js?v=20261112c';
 
 export class CampaignManager {
   constructor(apiService) {
