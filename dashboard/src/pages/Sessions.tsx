@@ -99,13 +99,19 @@ export function Sessions() {
   // proxy, and the credentials with it, that the operator never got to see.
   const [proxyLoadFailed, setProxyLoadFailed] = useState(false);
 
+  // Ids this page has deleted. Session ids are UUIDs and never reused, so the set only grows.
+  const deletedIdsRef = useRef<Set<string>>(new Set());
+
   const fetchSessions = useCallback(async (): Promise<Session[]> => {
     try {
       // Background refetches — a websocket push, a mutation reloading the list — would otherwise
       // replace the whole page with a spinner for the length of a round-trip, so a restriction
       // arriving on a live page reads as a full reload.
       if (!initialLoadDone.current) setLoading(true);
-      const data = await sessionApi.list();
+      const fetched = await sessionApi.list();
+      // A list request already in flight when a delete committed (e.g. one fired by the teardown's own
+      // `disconnected` push) answers with the pre-delete rows; never let it resurrect a deleted card.
+      const data = fetched.filter(s => !deletedIdsRef.current.has(s.id));
       setSessions(data);
       setError(null);
       // Keep the shared React Query cache (read by the Dashboard via useSessionsQuery /
@@ -257,11 +263,18 @@ export function Sessions() {
 
   const handleDelete = async (id: string) => {
     const session = sessions.find(s => s.id === id);
+    const removeLocally = async () => {
+      deletedIdsRef.current.add(id);
+      // Update the ref too: the WS status handler writes `sessionsRef.current` back into state, and a
+      // ref still holding this row would put the card right back.
+      sessionsRef.current = sessionsRef.current.filter(s => s.id !== id);
+      setSessions(current => current.filter(s => s.id !== id));
+      setSelectedSession(current => (current?.id === id ? null : current));
+      await invalidateSessionQueries(queryClient, queryKeys.sessions);
+    };
     try {
       await sessionApi.delete(id);
-      // Functional removal (no stale `sessions` capture), then invalidate the prefix.
-      setSessions(current => current.filter(s => s.id !== id));
-      await invalidateSessionQueries(queryClient, queryKeys.sessions);
+      await removeLocally();
       toast.success(
         t('sessions.delete.successTitle'),
         session
@@ -269,6 +282,13 @@ export function Sessions() {
           : t('sessions.delete.successDescGeneric'),
       );
     } catch (err) {
+      // 404 = the row is already gone (an earlier delete committed); the goal state is reached, so
+      // drop the stale card instead of reporting a failure the operator cannot act on.
+      if ((err as { status?: number })?.status === 404) {
+        await removeLocally();
+        setDeleteConfirmId(null);
+        return;
+      }
       const msg = err instanceof Error ? err.message : t('sessions.delete.errorDefault');
       console.error('Failed to delete:', err);
       toast.error(t('sessions.delete.errorTitle'), msg);
