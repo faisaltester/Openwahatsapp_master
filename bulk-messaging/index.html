@@ -4,9 +4,9 @@
     <base href="/bulk/" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenWA - Bulk WhatsApp Campaign Workspace</title>
+    <title>Bulk Campaign · OpenWA</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2325d366'><circle cx='12' cy='12' r='10'/></svg>" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20261112b" />
     <script>
       // Follow the dashboard theme (openwa_theme: light | dark | system), including live sidebar toggles.
       (function () {
@@ -26,232 +26,200 @@
     <script src="./vendor/xlsx.full.min.js"></script>
   </head>
   <body>
-    <!-- Top Header -->
-    <header class="app-header">
-      <div class="brand-area">
-        <div class="brand-logo">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c4.55 0 8.24 3.7 8.24 8.24 0 2.2-.86 4.28-2.42 5.83a8.17 8.17 0 0 1-5.82 2.41h-.01c-1.47 0-2.91-.39-4.17-1.14l-.3-.18-3.12.82.83-3.04-.2-.31a8.188 8.188 0 0 1-1.26-4.39c0-4.54 3.7-8.24 8.24-8.24m4.53 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.74-.66-1.24-1.48-1.39-1.73-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.17.04-.32-.02-.44-.06-.13-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.55.13.17 1.74 2.65 4.21 3.72.59.25 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.07-.1-.23-.17-.48-.29" />
-          </svg>
-          OpenWA Bulk Campaign
+    <div class="page">
+      <!-- ================= Page Header ================= -->
+      <header class="page-header">
+        <div class="page-title">
+          <span class="title-icon"><i data-icon="send" data-size="20"></i></span>
+          <div>
+            <h1>Bulk Campaign</h1>
+            <p>Import recipients, compose personalised messages and send them in safe, paced batches.</p>
+          </div>
         </div>
-        <span class="brand-tag">Dedicated Module</span>
 
-        <div class="session-selector-area">
-          <label for="sessionSelect">Session:</label>
-          <select id="sessionSelect" class="session-select">
-            <option value="">Loading sessions...</option>
-          </select>
-          <span id="sessionStatusPill" class="cap-pill supported">Checking...</span>
-          <button id="btnRefreshSessions" class="btn btn-sm" title="Refresh Session Statuses" style="padding: 2px 7px; min-width: unset; height: 24px;">↻</button>
-          <button id="btnOpenSessionManager" class="btn btn-sm" title="Manage WhatsApp Sessions & QR Codes" style="display: flex; align-items: center; gap: 4px; font-weight: 600; padding: 2px 8px; background: #059669; color: #ffffff; border: 1px solid #10b981; height: 24px;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            + Sessions / QR
+        <div class="header-actions">
+          <button id="btnOpenReportsHistory" class="btn" title="Campaign reports and delivery history">
+            <i data-icon="file"></i><span>Reports</span>
+            <span id="reportsCountBadge" class="count-chip">0</span>
+          </button>
+          <button id="btnStatsModal" class="btn" title="Gateway statistics and audit log">
+            <i data-icon="chart"></i><span>Analytics</span>
+          </button>
+          <button id="btnOpenApiConfig" class="btn btn-icon" title="API connection settings" aria-label="API settings">
+            <i data-icon="sliders"></i>
           </button>
         </div>
-      </div>
+      </header>
 
-      <div class="header-actions">
-        <a href="/" class="btn btn-sm" title="Return to the OpenWA dashboard" style="display: flex; align-items: center; gap: 6px; font-weight: 600; background: #334155; color: #ffffff; border: 1px solid #64748b; text-decoration: none;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/><path d="M9 12h12"/></svg>
-          Dashboard
-        </a>
-        <button id="btnOpenReportsHistory" class="btn btn-sm" title="View persistent campaign reports and message history" style="display: flex; align-items: center; gap: 6px; font-weight: 600; background: #0284c7; color: #ffffff; border: 1px solid #38bdf8;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          Reports & History
-          <span id="reportsCountBadge" style="background: rgba(255,255,255,0.25); font-size: 10px; padding: 1px 5px; border-radius: 10px;">0</span>
-        </button>
-        <button id="btnFetchAddressbook" class="btn btn-sm" title="Import from OpenWA session addressbook">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          Addressbook / Groups
-        </button>
-        <button id="btnStatsModal" class="btn btn-sm" title="View gateway statistics">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-          Analytics & Logs
-        </button>
-        <button id="btnOpenApiConfig" class="btn btn-primary btn-sm">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          API Settings
-        </button>
-      </div>
-    </header>
-
-    <!-- Discovered API Capability Matrix Bar -->
-    <div class="capability-bar">
-      <div class="capability-pills">
-        <span class="cap-pill supported" title="OpenWA native WhatsApp message dispatch">
-          <span class="dot green"></span> WhatsApp: Supported
-        </span>
-        <span class="cap-pill unsupported" title="The OpenWA backend does not contain SMS endpoints">
-          <span class="dot red"></span> SMS: API Not Supported
-        </span>
-        <span class="cap-pill supported" title="POST /api/sessions/{id}/messages/send-bulk (Max 100/batch)">
-          <span class="dot green"></span> Bulk Send: Active (Max 100)
-        </span>
-        <span class="cap-pill supported" title="delayBetweenMessages, randomizeDelay, stopOnError">
-          <span class="dot green"></span> Pacing / Jitter: Supported
-        </span>
-        <span class="cap-pill supported" title="Backend collapses exact duplicates automatically">
-          <span class="dot green"></span> Duplicate Collapse: Active
-        </span>
-        <span class="cap-pill supported" title="GET /api/sessions/{id}/messages/batch/{batchId}">
-          <span class="dot green"></span> Batch Status / Progress: Supported
-        </span>
-        <span class="cap-pill client-managed" title="Client-orchestrated queue with date/time trigger">
-          <span class="dot blue"></span> Campaign & Scheduler: Client-Managed
-        </span>
-      </div>
-      <div id="apiConnectionStatus" class="cap-pill supported">
-        <span class="dot green"></span> API Connected (Port 2785)
-      </div>
-    </div>
-
-    <!-- Workspace Main Grid (3 Columns) -->
-    <main class="workspace-container">
-      
-      <!-- ================= Column 1: WhatsApp Numbers & Contacts ================= -->
-      <section class="column-panel">
-        <div class="panel-header">
-          <div class="panel-header-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
-            WhatsApp Numbers
-          </div>
-          <div class="panel-header-actions">
-            <button id="btnExportContacts" class="btn btn-sm" title="Export contacts table to Excel (.xlsx)">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-              Export Excel
-            </button>
-            <button id="btnClearContacts" class="btn btn-sm" title="Clear table">Clear</button>
-          </div>
-        </div>
-
-        <div class="import-strip">
-          <div class="import-buttons">
-            <input type="file" id="fileImportInput" accept=".csv, .txt, .xlsx, .xls" style="display: none;" />
-            <button id="btnImportFile" class="btn btn-primary btn-sm" style="flex: 1;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-              Import Excel / CSV
-            </button>
-            <button id="btnSampleContacts" class="btn btn-sm" title="Load sample test numbers into table">
-              Sample
-            </button>
-            <button id="btnDownloadSampleExcel" class="btn btn-sm" title="Download sample Excel template (.xlsx)">
-              Sample .xlsx
-            </button>
-          </div>
-
-          <!-- Duplicate Detection & Removal Bar -->
-          <div id="duplicateBanner" class="duplicate-banner" style="display: none;">
-            <div class="duplicate-stats">
-              <span>Duplicates: <strong id="dupCount">0</strong></span>
-              <span>Unique: <strong id="uniqueCount">0</strong></span>
-              <span>Invalid: <strong id="invalidCount">0</strong></span>
+      <!-- ================= Session Bar ================= -->
+      <section class="session-bar card" aria-label="WhatsApp number">
+        <div class="session-main">
+          <span class="session-avatar"><i data-icon="phone" data-size="18"></i></span>
+          <div class="session-field">
+            <label for="sessionSelect">Sending number</label>
+            <div class="select-wrap">
+              <select id="sessionSelect" class="input">
+                <option value="">Loading sessions…</option>
+              </select>
             </div>
-            <button id="btnRemoveDuplicates" class="btn btn-sm btn-danger">
-              Remove Duplicates
-            </button>
           </div>
-
-          <!-- Draft Auto-Saved Indicator (Refresh Proof) -->
-          <div id="draftStatusBanner" style="display: none; align-items: center; justify-content: space-between; padding: 5px 8px; margin-top: 6px; background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 4px; font-size: 11px; color: #065f46;">
-            <div style="display: flex; align-items: center; gap: 5px;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-              <span>Auto-saved in browser database (Refresh-proof)</span>
-            </div>
-            <button id="btnClearDraftBtn" class="btn btn-sm" style="font-size: 10px; padding: 2px 7px; height: 20px; line-height: 1;" title="Clear draft list">Clear Draft</button>
-          </div>
+          <span id="sessionStatusPill" class="status-badge neutral">Checking…</span>
         </div>
-
-        <!-- Filter & Search Toolbar -->
-        <div class="panel-toolbar">
-          <input type="text" id="contactSearchInput" class="input-text" placeholder="Search number, name, var..." style="width: 140px;" />
-          <div style="display: flex; gap: 4px;">
-            <select id="contactFilterSelect" class="input-select" style="font-size: 11px;">
-              <option value="all">All Records</option>
-              <option value="unique">Unique Only</option>
-              <option value="duplicates">Duplicates</option>
-              <option value="invalid">Invalid</option>
-            </select>
-          </div>
+        <div class="session-meta">
+          <span id="activeSessionNameTag" class="meta-text">—</span>
+          <span id="waReadyStatusTag" class="status-dot neutral">WhatsApp: checking</span>
+          <span id="apiConnectionStatus" class="status-dot neutral">API: checking</span>
+          <span id="internetStatusTag" class="status-dot ok">Online</span>
         </div>
-
-        <!-- Contacts Table -->
-        <div class="table-container">
-          <table class="data-table" id="contactsTable">
-            <thead>
-              <tr>
-                <th style="width: 26px;"><input type="checkbox" id="selectAllCheckbox" checked /></th>
-                <th>Name</th>
-                <th>Number</th>
-                <th>Var1</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="contactsTableBody">
-              <tr>
-                <td colspan="5" style="text-align: center; color: #94a3b8; padding: 24px;">
-                  No contacts loaded. Click <strong>Import Excel / CSV</strong> or <strong>Sample</strong>.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Column 1 Footer -->
-        <div class="panel-footer">
-          <div class="footer-metrics">
-            <span>Total: <strong id="footerTotal">0</strong></span>
-            <span>Contacts: <strong id="footerContacts">0</strong></span>
-            <span>Groups: <strong id="footerGroups">0</strong></span>
-          </div>
-          <div>
-            <span>Selected: <strong id="footerSelected" style="color: #38bdf8;">0</strong></span>
-          </div>
+        <div class="session-actions">
+          <button id="btnRefreshSessions" class="btn btn-icon" title="Refresh session status" aria-label="Refresh sessions"><i data-icon="refresh"></i></button>
+          <button id="btnOpenSessionManager" class="btn"><i data-icon="qr"></i><span>Manage numbers</span></button>
         </div>
       </section>
 
-      <!-- ================= Column 2: Message Composer & Media ================= -->
-      <section class="column-panel">
-        <div class="panel-header">
-          <div class="panel-header-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
-            Message
-          </div>
-          <div class="panel-header-actions">
-            <button id="btnLoadTemplates" class="btn btn-sm" title="Select or save OpenWA server template">
-              Server Templates
-            </button>
-          </div>
+      <!-- ================= KPI Strip ================= -->
+      <section class="kpi-grid" aria-label="Campaign summary">
+        <div class="kpi card">
+          <span class="kpi-icon green"><i data-icon="users" data-size="18"></i></span>
+          <div><span class="kpi-label">Recipients selected</span><strong id="kpiRecipients">0</strong></div>
         </div>
+        <div class="kpi card">
+          <span class="kpi-icon blue"><i data-icon="message" data-size="18"></i></span>
+          <div><span class="kpi-label">Messages to send</span><strong id="kpiMessages">0</strong></div>
+        </div>
+        <div class="kpi card">
+          <span class="kpi-icon purple"><i data-icon="layers" data-size="18"></i></span>
+          <div><span class="kpi-label">API batches</span><strong id="kpiBatches">0</strong></div>
+        </div>
+        <div class="kpi card">
+          <span class="kpi-icon amber"><i data-icon="clock" data-size="18"></i></span>
+          <div><span class="kpi-label">Estimated duration</span><strong id="kpiDuration">—</strong></div>
+        </div>
+      </section>
 
-        <div class="composer-body">
-          <!-- Channel Switcher -->
-          <div class="channel-selector">
-            <button class="channel-btn active" id="channelWhatsappBtn">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.5 1.3 5L2 22l5.3-1.4c1.5.8 3.1 1.3 4.7 1.3 5.5 0 10-4.5 10-10S17.5 2 12 2z"/></svg>
-              WhatsApp (Active)
-            </button>
-            <button class="channel-btn disabled" id="channelSmsBtn" title="SMS is API Not Supported (WhatsApp Only Gateway)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              SMS
-              <span class="channel-tag">Not Supported</span>
-            </button>
+      <!-- ================= Workspace ================= -->
+      <main class="workspace">
+        <!-- ---------- Step 1: Recipients ---------- -->
+        <section class="card panel panel-recipients">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span class="step">1</span>
+              <div>
+                <h2>Recipients</h2>
+                <p>Excel, CSV or your WhatsApp contacts</p>
+              </div>
+            </div>
+            <div class="panel-tools">
+              <button id="btnExportContacts" class="btn btn-sm" title="Export the contact list to Excel (.xlsx)"><i data-icon="download" data-size="14"></i><span>Export</span></button>
+              <button id="btnClearContacts" class="btn btn-sm btn-ghost-danger" title="Remove all contacts"><i data-icon="trash" data-size="14"></i><span>Clear</span></button>
+            </div>
           </div>
 
-          <!-- Message Tabs -->
-          <div class="composer-tabs">
-            <button class="tab-btn active">Message 1</button>
+          <div class="import-grid">
+            <input type="file" id="fileImportInput" accept=".csv,.txt,.xlsx,.xls" hidden />
+            <button id="btnImportFile" class="import-tile primary">
+              <i data-icon="upload" data-size="18"></i>
+              <span><strong>Import file</strong><small>.xlsx, .xls, .csv, .txt</small></span>
+            </button>
+            <button id="btnFetchAddressbook" class="import-tile">
+              <i data-icon="users" data-size="18"></i>
+              <span><strong>WhatsApp contacts</strong><small>Contacts or groups</small></span>
+            </button>
+          </div>
+          <div class="import-links">
+            <button id="btnDownloadSampleExcel" class="link-btn"><i data-icon="table" data-size="14"></i>Download sample .xlsx</button>
+            <button id="btnSampleContacts" class="link-btn"><i data-icon="eye" data-size="14"></i>Load demo rows</button>
           </div>
 
-          <!-- Message Editor -->
-          <div class="editor-box">
-            <textarea id="messageTextarea" class="message-textarea" placeholder="Type your WhatsApp message here... Use {{name}}, {{number}}, {{var1}} for variables.">Hello {{name}}, this is an update regarding your order {{var1}}.</textarea>
-            
-            <div class="editor-toolbar">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <label style="font-size: 11px; color: #94a3b8;">Insert Variable:</label>
-                <select id="insertVariableSelect" class="insert-vars-dropdown">
-                  <option value="">-- Choose variable --</option>
+          <div id="duplicateBanner" class="notice warn" hidden>
+            <i data-icon="alert" data-size="16"></i>
+            <div class="notice-body">
+              <strong><span id="dupCount">0</span> duplicate · <span id="invalidCount">0</span> invalid</strong>
+              <small><span id="uniqueCount">0</span> unique valid numbers will be used.</small>
+            </div>
+            <button id="btnRemoveDuplicates" class="btn btn-sm">Remove duplicates</button>
+          </div>
+
+          <div id="draftStatusBanner" class="notice ok" hidden>
+            <i data-icon="save" data-size="16"></i>
+            <div class="notice-body"><span>Saved in this browser</span></div>
+            <button id="btnClearDraftBtn" class="btn btn-sm">Clear saved list</button>
+          </div>
+
+          <div class="filter-bar">
+            <label class="search-field">
+              <i data-icon="search" data-size="15"></i>
+              <input type="search" id="contactSearchInput" class="input" placeholder="Search name, number or variable" aria-label="Search contacts" />
+            </label>
+            <div class="select-wrap select-compact">
+              <select id="contactFilterSelect" class="input" aria-label="Filter contacts">
+                <option value="all">All</option>
+                <option value="unique">Valid &amp; unique</option>
+                <option value="selected">Selected</option>
+                <option value="duplicates">Duplicates</option>
+                <option value="invalid">Invalid</option>
+                <option value="groups">Groups</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-wrap contacts-wrap">
+            <table class="data-table contacts-table" id="contactsTable">
+              <thead>
+                <tr>
+                  <th class="col-check"><input type="checkbox" id="selectAllCheckbox" aria-label="Select all visible" /></th>
+                  <th>Name</th>
+                  <th>Number</th>
+                  <th class="col-var">Var1</th>
+                  <th class="col-status">Status</th>
+                </tr>
+              </thead>
+              <tbody id="contactsTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="panel-foot">
+            <span>Total <strong id="footerTotal">0</strong></span>
+            <span>Contacts <strong id="footerContacts">0</strong></span>
+            <span>Groups <strong id="footerGroups">0</strong></span>
+            <span class="foot-accent">Selected <strong id="footerSelected">0</strong></span>
+          </div>
+        </section>
+
+        <!-- ---------- Step 2: Message ---------- -->
+        <section class="card panel panel-composer">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span class="step">2</span>
+              <div>
+                <h2>Message</h2>
+                <p>Each block is sent as its own message, in order</p>
+              </div>
+            </div>
+            <div class="panel-tools">
+              <button id="btnLoadTemplates" class="btn btn-sm" title="Use or save a server template"><i data-icon="file" data-size="14"></i><span>Templates</span></button>
+            </div>
+          </div>
+
+          <div class="block-tabs" role="tablist" aria-label="Message blocks">
+            <div id="messageBlockTabs" class="block-tab-list"></div>
+            <button id="btnAddBlock" class="block-add" title="Add another message block"><i data-icon="plus" data-size="14"></i><span>Add block</span></button>
+          </div>
+
+          <div class="editor">
+            <div class="editor-toolbar" role="toolbar" aria-label="Formatting">
+              <button class="tool-btn" id="btnBold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
+              <button class="tool-btn" id="btnItalic" title="Italic (Ctrl+I)" aria-label="Italic"><i class="glyph-i">I</i></button>
+              <button class="tool-btn" id="btnStrike" title="Strikethrough (Ctrl+Shift+X)" aria-label="Strikethrough"><s>S</s></button>
+              <button class="tool-btn" id="btnMono" title="Monospace (Ctrl+E)" aria-label="Monospace"><i data-icon="code" data-size="15"></i></button>
+              <span class="tool-sep" aria-hidden="true"></span>
+              <div class="emoji-anchor">
+                <button class="tool-btn" id="btnEmoji" title="Insert emoji" aria-label="Insert emoji" aria-haspopup="true" aria-expanded="false"><i data-icon="smile" data-size="16"></i></button>
+                <div id="emojiPicker" class="emoji-picker" hidden></div>
+              </div>
+              <div class="select-wrap select-vars">
+                <select id="insertVariableSelect" class="input" aria-label="Insert variable">
+                  <option value="">Insert variable</option>
                   <option value="{{name}}">{{name}}</option>
                   <option value="{{number}}">{{number}}</option>
                   <option value="{{var1}}">{{var1}}</option>
@@ -259,816 +227,549 @@
                   <option value="{{var3}}">{{var3}}</option>
                 </select>
               </div>
-
-              <div class="format-tools">
-                <button class="format-btn" id="btnBold" title="Bold (*text*)">B</button>
-                <button class="format-btn" id="btnItalic" title="Italic (_text_)">I</button>
-                <button class="format-btn" id="btnStrike" title="Strikethrough (~text~)">S</button>
-                <button class="format-btn" id="btnEmoji" title="Insert Emoji">😊</button>
-              </div>
+              <button id="btnRemoveBlock" class="tool-btn tool-danger" title="Delete this block" aria-label="Delete this block"><i data-icon="trash" data-size="15"></i></button>
+            </div>
+            <textarea id="messageTextarea" class="message-textarea" rows="7" placeholder="Hi {{name}}, your order {{var1}} is on its way 🚚"></textarea>
+            <div class="editor-foot">
+              <span id="blockLabel">Block 1 of 1</span>
+              <span><strong id="charCount">0</strong> / 4096</span>
             </div>
           </div>
 
-          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-            <span>Characters: <strong id="charCount">0</strong></span>
-            <span>Recipients: <strong id="composerRecipientCount">0</strong></span>
-          </div>
-
-          <!-- Attach Files & Photos Section -->
-          <div class="media-section">
-            <div class="media-header">
-              <span>Attach Files & Photos</span>
-              <div style="display: flex; gap: 6px;">
-                <input type="file" id="mediaFileInput" style="display: none;" />
-                <button id="btnAttachFile" class="btn btn-sm">
-                  + Add File
-                </button>
-              </div>
+          <!-- Attachment -->
+          <div class="attach">
+            <div class="attach-head">
+              <span class="sub-title"><i data-icon="clip" data-size="15"></i>Attachment <small>(optional)</small></span>
+              <input type="file" id="mediaFileInput" hidden />
+              <button id="btnAttachFile" class="btn btn-sm"><i data-icon="upload" data-size="14"></i><span>Upload file</span></button>
             </div>
-
-            <div class="media-body">
-              <div class="form-row">
-                <select id="mediaTypeSelect" class="input-select" style="width: 120px;">
-                  <option value="text">No Attachment (Text)</option>
+            <div class="attach-row">
+              <div class="select-wrap select-compact">
+                <select id="mediaTypeSelect" class="input" aria-label="Attachment type">
+                  <option value="text">No attachment</option>
                   <option value="image">Image</option>
                   <option value="video">Video</option>
                   <option value="audio">Audio</option>
                   <option value="document">Document</option>
                 </select>
-                <input type="text" id="mediaUrlInput" class="input-text" placeholder="Or enter media URL (https://...)" style="flex: 1;" />
               </div>
+              <input type="url" id="mediaUrlInput" class="input" placeholder="…or paste a public https:// link" />
+            </div>
+            <div id="mediaDetailsRow" class="attach-details" hidden>
+              <div class="file-chip">
+                <i data-icon="image" data-size="15"></i>
+                <span id="attachedFileName">No file selected</span>
+                <button id="btnClearMedia" class="chip-x" title="Remove attachment" aria-label="Remove attachment"><i data-icon="x" data-size="13"></i></button>
+              </div>
+              <input type="text" id="mediaCaptionInput" class="input" maxlength="1024" placeholder="Caption shown under the file (optional)" />
+              <label class="check-line">
+                <input type="checkbox" id="sendSeparateTextMessageCheck" checked />
+                <span>Send the message blocks as separate texts after the file</span>
+              </label>
+              <label id="pttVoiceToggleWrap" class="check-line" hidden>
+                <input type="checkbox" id="pttVoiceCheck" />
+                <span>Send audio as a voice note</span>
+              </label>
+            </div>
+          </div>
 
-              <div id="mediaDetailsRow" style="display: none; flex-direction: column; gap: 6px;">
-                <input type="text" id="mediaCaptionInput" class="input-text" placeholder="Media caption / File text (e.g. File Now)..." />
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                  <span id="attachedFileName" style="font-size: 11px; color: #0284c7; font-weight: 500;"></span>
-                  <label id="pttVoiceToggleWrap" style="display: none; font-size: 11px; align-items: center; gap: 4px; cursor: pointer;">
-                    <input type="checkbox" id="pttVoiceCheck" />
-                    Send as WhatsApp Voice Note (PTT)
-                  </label>
-                </div>
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 4px;">
-                  <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: #0369a1; font-weight: 600;">
-                    <input type="checkbox" id="sendSeparateTextMessageCheck" checked />
-                    Send main Message with file (Both Media + Text)
-                  </label>
-                  <span style="font-size: 10px; color: #0284c7;">File + Message Dono Jayenge</span>
-                </div>
+          <!-- Live preview -->
+          <div class="preview">
+            <div class="preview-head">
+              <span class="sub-title"><i data-icon="eye" data-size="15"></i>Preview</span>
+              <span id="previewRecipient" class="meta-text">Sample values</span>
+            </div>
+            <div class="chat-surface" id="messagePreview"></div>
+          </div>
+
+          <div class="panel-foot">
+            <span>Recipients <strong id="composerRecipientCount">0</strong></span>
+            <span>Messages per recipient <strong id="itemsPerRecipient">1</strong></span>
+          </div>
+        </section>
+
+        <!-- ---------- Step 3: Delivery ---------- -->
+        <section class="card panel panel-settings">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span class="step">3</span>
+              <div>
+                <h2>Delivery</h2>
+                <p>Pacing keeps your number safe</p>
               </div>
             </div>
+          </div>
+
+          <div class="field">
+            <label for="campaignNameInput">Campaign name <small>(optional)</small></label>
+            <input type="text" id="campaignNameInput" class="input" maxlength="120" placeholder="e.g. March order updates" />
+          </div>
+
+          <div class="field">
+            <label>Sending speed</label>
+            <div class="speed-grid">
+              <button class="speed-btn active" data-delay="5000"><strong>Normal</strong><small>5 s</small></button>
+              <button class="speed-btn" data-delay="10000"><strong>Slow</strong><small>10 s</small></button>
+              <button class="speed-btn" data-delay="15000"><strong>Safe</strong><small>15 s</small></button>
+              <button class="speed-btn" data-delay="30000"><strong>Very safe</strong><small>30 s</small></button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-row">
+              <label for="delaySlider">Delay between messages</label>
+              <span id="delayDisplay" class="value-chip">5.0 s</span>
+            </div>
+            <input type="range" id="delaySlider" min="3000" max="60000" step="500" value="5000" />
+            <div class="range-scale"><span>3 s</span><span>60 s</span></div>
+          </div>
+
+          <div class="field two-col">
+            <div>
+              <label for="batchSizeInput">Batch size</label>
+              <input type="number" id="batchSizeInput" class="input" min="1" max="100" value="100" inputmode="numeric" />
+              <small class="hint">Max 100 messages per API call</small>
+            </div>
+            <div>
+              <label for="interBatchDelaySelect">Pause between batches</label>
+              <div class="select-wrap">
+                <select id="interBatchDelaySelect" class="input">
+                  <option value="10">10 seconds</option>
+                  <option value="30" selected>30 seconds</option>
+                  <option value="60">1 minute</option>
+                  <option value="120">2 minutes</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="toggles">
+            <label class="switch-line">
+              <input type="checkbox" id="randomizeDelayCheck" class="switch" checked />
+              <span><strong>Random jitter</strong><small>Adds 0–2 s to each delay</small></span>
+            </label>
+            <label class="switch-line">
+              <input type="checkbox" id="stopOnErrorCheck" class="switch" checked />
+              <span><strong>Stop on first error</strong><small>Halts the batch if a send fails</small></span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label for="scheduleDateTimeInput">Schedule <small>(optional)</small></label>
+            <input type="datetime-local" id="scheduleDateTimeInput" class="input" />
+            <div id="scheduleCountdownDisplay" class="notice info compact" hidden>
+              <i data-icon="calendar" data-size="15"></i>
+              <div class="notice-body"><span>Starts in <strong id="scheduleCountdownText">—</strong></span><small>Keep this tab open until it starts.</small></div>
+            </div>
+          </div>
+
+          <div id="sendChecklist" class="checklist" aria-live="polite"></div>
+
+          <div class="action-stack">
+            <button id="btnSendNow" class="btn btn-primary btn-lg"><i data-icon="send" data-size="17"></i><span>Send now</span></button>
+            <button id="btnScheduleSend" class="btn btn-lg"><i data-icon="calendar" data-size="17"></i><span>Schedule send</span></button>
+          </div>
+        </section>
+      </main>
+
+      <!-- ================= Live Monitor ================= -->
+      <section class="card monitor" id="liveMonitorDrawer">
+        <div class="monitor-head" id="monitorHeaderBar">
+          <div class="monitor-title">
+            <span class="kpi-icon blue"><i data-icon="activity" data-size="18"></i></span>
+            <div>
+              <h2>Live delivery</h2>
+              <p><span id="monitorStatusText" class="state-badge" data-state="idle">Idle</span><span id="monitorSubText" class="meta-text">No campaign running</span></p>
+            </div>
+          </div>
+          <div class="monitor-actions">
+            <button id="btnCancelBatch" class="btn btn-sm btn-danger" hidden><i data-icon="stop" data-size="14"></i><span>Cancel</span></button>
+            <button id="btnRetryFailed" class="btn btn-sm" hidden><i data-icon="retry" data-size="14"></i><span>Retry failed</span></button>
+            <button id="btnExportResultsExcel" class="btn btn-sm" title="Export the delivery report to Excel (.xlsx)"><i data-icon="download" data-size="14"></i><span>Excel</span></button>
+            <button id="btnExportResults" class="btn btn-sm" title="Export the delivery report to CSV"><i data-icon="download" data-size="14"></i><span>CSV</span></button>
+            <button id="btnToggleMonitor" class="btn btn-sm" aria-expanded="true"><span id="toggleMonitorIcon" class="chev">▾</span><span id="toggleMonitorText">Hide log</span></button>
+          </div>
+        </div>
+
+        <div class="progress-row">
+          <div class="progress-track"><div id="monitorProgressBar" class="progress-fill"></div></div>
+          <strong id="monitorProgressPercent">0%</strong>
+        </div>
+
+        <div class="monitor-stats">
+          <div><span>Total</span><strong id="statTotal">0</strong></div>
+          <div class="ok"><span>Sent</span><strong id="statSent">0</strong></div>
+          <div class="bad"><span>Failed</span><strong id="statFailed">0</strong></div>
+          <div class="info"><span>Pending</span><strong id="statPending">0</strong></div>
+        </div>
+
+        <div class="monitor-body">
+          <div class="table-wrap monitor-wrap">
+            <table class="data-table monitor-table" id="monitorResultsTable">
+              <thead>
+                <tr>
+                  <th class="col-num">#</th>
+                  <th>Recipient</th>
+                  <th class="col-status">Status</th>
+                  <th class="col-content">Message</th>
+                  <th class="col-detail">ID / error</th>
+                  <th class="col-time">Time</th>
+                </tr>
+              </thead>
+              <tbody id="monitorResultsBody"></tbody>
+            </table>
           </div>
         </div>
       </section>
+    </div>
 
-      <!-- ================= Column 3: Batch, Timing & Execution ================= -->
-      <section class="column-panel">
-        <div class="panel-header">
-          <div class="panel-header-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Sending & Pacing Settings
-          </div>
-        </div>
-
-        <div class="settings-body">
-          <!-- Campaign Title Card -->
-          <div class="config-card">
-            <div class="config-card-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-              Campaign Title & Identity
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label style="font-size: 11px;">Campaign Name / Note (Optional):</label>
-              <input type="text" id="campaignNameInput" class="input-text" placeholder="e.g. March Client Update Batch 1" style="font-size: 11px;" />
-              <small style="color: #64748b; font-size: 10px; display: block; margin-top: 3px;">Saved permanently in Reports & History for audit and Excel export.</small>
-            </div>
-          </div>
-
-          <!-- Batch Configuration -->
-          <div class="config-card">
-            <div class="config-card-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-              Batch Configuration
-            </div>
-            <div class="form-row">
-              <label>Batch Size (Max 100/API):</label>
-              <input type="number" id="batchSizeInput" class="input-number" min="1" max="100" value="100" style="width: 70px;" />
-            </div>
-            <div style="font-size: 11px; color: #64748b;">
-              Lists larger than 100 are automatically chunked and sequenced.
-            </div>
-          </div>
-
-          <!-- Speed / Process Settings -->
-          <div class="config-card">
-            <div class="config-card-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              Speed & Pacing Settings
-            </div>
-
-            <div class="speed-presets">
-              <button class="speed-btn active" data-delay="5000">Normal (5s)</button>
-              <button class="speed-btn" data-delay="10000">Slow (10s)</button>
-              <button class="speed-btn" data-delay="15000">Safe (15s)</button>
-              <button class="speed-btn" data-delay="30000">Very Safe (30s)</button>
-            </div>
-
-            <div class="form-group" style="margin-top: 4px;">
-              <div style="display: flex; justify-content: space-between; font-size: 11px;">
-                <label>Delay Between Messages:</label>
-                <span id="delayDisplay" style="font-weight: 600; color: #0284c7;">5.0s (5000ms)</span>
-              </div>
-              <input type="range" id="delaySlider" min="3000" max="60000" step="500" value="5000" />
-            </div>
-
-            <div class="form-group">
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px;">
-                <input type="checkbox" id="randomizeDelayCheck" checked />
-                Add Random 0-2s Jitter (API randomizeDelay)
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px;">
-                <input type="checkbox" id="stopOnErrorCheck" checked />
-                Stop Batch on First Error (API stopOnError)
-              </label>
-            </div>
-
-            <div class="form-row" style="margin-top: 4px;">
-              <label>Pause Between Chunks:</label>
-              <select id="interBatchDelaySelect" class="input-select" style="width: 90px;">
-                <option value="10">10 seconds</option>
-                <option value="30" selected>30 seconds</option>
-                <option value="60">60 seconds</option>
-                <option value="120">2 minutes</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Timing & Scheduling -->
-          <div class="config-card">
-            <div class="config-card-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
-              Timing & Scheduler
-            </div>
-            <div class="form-group">
-              <label>Schedule Send Time:</label>
-              <input type="datetime-local" id="scheduleDateTimeInput" class="input-text" />
-            </div>
-            <div id="scheduleCountdownDisplay" style="font-size: 11px; color: #d97706; font-weight: 600; display: none;">
-              Scheduled: <span id="scheduleCountdownText">00:00:00</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Action Box -->
-        <div class="action-box">
-          <button id="btnScheduleSend" class="btn-schedule">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>
-            Schedule Send
-          </button>
-          <button id="btnSendNow" class="btn-send-now">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            Send Now
-          </button>
-        </div>
-      </section>
-
-    </main>
-
-    <!-- ================= Live Campaign Monitor Drawer ================= -->
-    <section class="live-monitor-drawer collapsed" id="liveMonitorDrawer">
-      <div class="monitor-header" id="monitorHeaderBar" style="cursor: pointer;" title="Click to expand/collapse live delivery logs">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <span>Live Campaign Status: <strong id="monitorStatusText">Idle</strong></span>
-          <div class="monitor-progress-bar-wrap">
-            <div id="monitorProgressBar" class="monitor-progress-bar"></div>
-          </div>
-          <span id="monitorProgressPercent" style="font-size: 11px;">0%</span>
-        </div>
-
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <div style="display: flex; gap: 8px; font-size: 11px;">
-            <span>Total: <strong id="statTotal">0</strong></span>
-            <span style="color: #4ade80;">Sent: <strong id="statSent">0</strong></span>
-            <span style="color: #f87171;">Failed: <strong id="statFailed">0</strong></span>
-            <span style="color: #38bdf8;">Pending: <strong id="statPending">0</strong></span>
-          </div>
-
-          <div style="display: flex; gap: 5px;">
-            <button id="btnCancelBatch" class="btn btn-danger btn-sm" style="display: none;">Cancel Batch</button>
-            <button id="btnRetryFailed" class="btn btn-sm" style="display: none;">Retry Failed</button>
-            <button id="btnExportResultsExcel" class="btn btn-primary btn-sm" title="Export campaign delivery report to Excel (.xlsx)">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-              Export Excel (.xlsx)
-            </button>
-            <button id="btnExportResults" class="btn btn-sm" title="Export report to CSV (.csv)">Export CSV</button>
-            <button id="btnToggleMonitor" class="btn btn-sm" style="background: rgba(255, 255, 255, 0.12); color: #f8fafc; border-color: rgba(255, 255, 255, 0.25);" title="Expand or collapse live log table">
-              <span id="toggleMonitorIcon">▲</span> <span id="toggleMonitorText">Logs (0)</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live Results Table -->
-      <div class="table-container" style="max-height: 170px;">
-        <table class="data-table" id="monitorResultsTable">
-          <thead>
-            <tr>
-              <th style="width: 30px;">#</th>
-              <th>Recipient</th>
-              <th style="width: 65px;">Status</th>
-              <th>Message Content</th>
-              <th>Message ID / Error</th>
-              <th>Sent At</th>
-              <th>Batch ID</th>
-            </tr>
-          </thead>
-          <tbody id="monitorResultsBody">
-            <tr>
-              <td colspan="7" style="text-align: center; color: #94a3b8; padding: 14px;">
-                No campaign executed yet. Start or schedule a campaign to see live delivery updates.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Bottom Status Bar -->
-    <footer class="bottom-status-bar">
-      <div class="status-pills-left">
-        <span class="status-tag green" id="internetStatusTag">
-          ● Internet: Connected
-        </span>
-        <span class="status-tag green" id="waReadyStatusTag">
-          ● WhatsApp: Ready
-        </span>
-        <span class="status-tag blue" id="activeSessionNameTag">
-          Session: faisal
-        </span>
-      </div>
-
-      <div>
-        <span>OpenWA Gateway: <strong>/api (Active Gateway Proxy)</strong></span>
-      </div>
-    </footer>
+    <div id="toastHost" class="toast-host" aria-live="polite"></div>
 
     <!-- ================= Modals ================= -->
 
-    <!-- API Settings Modal -->
-    <div id="modalApiSettings" class="modal-overlay" style="display: none;">
-      <div class="modal-card">
+    <!-- API Settings -->
+    <div id="modalApiSettings" class="modal-overlay" hidden>
+      <div class="modal-card modal-sm" role="dialog" aria-modal="true" aria-labelledby="ttlApi">
         <div class="modal-header">
-          <span>OpenWA Gateway API Configuration</span>
-          <button class="btn btn-sm btnCloseModal" data-modal="modalApiSettings">✕</button>
+          <h3 id="ttlApi"><i data-icon="key"></i>API connection</h3>
+          <button class="btn btn-icon btnCloseModal" data-modal="modalApiSettings" aria-label="Close"><i data-icon="x"></i></button>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label>API Gateway Base URL:</label>
-            <input type="text" id="apiBaseUrlInput" class="input-text" value="/api" placeholder="/api (Auto-Proxy for Local & Online)" />
-            <small style="color: #64748b;">Default <code>/api</code> automatically connects to OpenWA Gateway on any computer or mobile.</small>
+          <div class="field">
+            <label for="apiBaseUrlInput">Gateway base URL</label>
+            <input type="text" id="apiBaseUrlInput" class="input" value="/api" placeholder="/api" />
+            <small class="hint">Keep <code>/api</code> to use this server's gateway.</small>
           </div>
-          <div class="form-group">
-            <label>X-Api-Key:</label>
-            <input type="password" id="apiKeyInput" class="input-text" placeholder="Auto-synced with Master API key" />
-            <small style="color: #64748b;">Automatically synced from server. Stored locally in your browser.</small>
+          <div class="field">
+            <label for="apiKeyInput">API key</label>
+            <input type="password" id="apiKeyInput" class="input" placeholder="Uses your dashboard login when empty" autocomplete="off" />
+            <small class="hint">Stored only in this browser.</small>
           </div>
-          <div id="apiTestResult" style="font-size: 12px; font-weight: 500;"></div>
+          <div id="apiTestResult" class="test-result" aria-live="polite"></div>
         </div>
         <div class="modal-footer">
-          <button id="btnTestApiConnection" class="btn">Test Connection</button>
-          <button id="btnSaveApiSettings" class="btn btn-primary">Save & Apply</button>
+          <button id="btnTestApiConnection" class="btn">Test connection</button>
+          <button id="btnSaveApiSettings" class="btn btn-primary">Save &amp; apply</button>
         </div>
       </div>
     </div>
 
-    <!-- Server Templates Modal -->
-    <div id="modalTemplates" class="modal-overlay" style="display: none;">
-      <div class="modal-card" style="width: 700px;">
+    <!-- Server Templates -->
+    <div id="modalTemplates" class="modal-overlay" hidden>
+      <div class="modal-card modal-md" role="dialog" aria-modal="true" aria-labelledby="ttlTpl">
         <div class="modal-header">
-          <span>OpenWA Server Message Templates</span>
-          <button class="btn btn-sm btnCloseModal" data-modal="modalTemplates">✕</button>
+          <h3 id="ttlTpl"><i data-icon="file"></i>Message templates</h3>
+          <button class="btn btn-icon btnCloseModal" data-modal="modalTemplates" aria-label="Close"><i data-icon="x"></i></button>
         </div>
         <div class="modal-body">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 12px; color: #64748b;">Available templates from active session:</span>
-            <button id="btnShowCreateTemplate" class="btn btn-sm btn-primary">+ Create Template</button>
+          <div class="row-between">
+            <span class="meta-text">Templates saved on the selected number</span>
+            <div class="row-gap">
+              <button id="btnSaveCurrentAsTemplate" class="btn btn-sm">Save current block</button>
+              <button id="btnShowCreateTemplate" class="btn btn-sm btn-primary"><i data-icon="plus" data-size="14"></i>New</button>
+            </div>
           </div>
-
-          <div id="templateListContainer" class="table-container" style="max-height: 250px;">
+          <div id="templateListContainer" class="table-wrap modal-table">
             <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Body</th>
-                  <th>Header / Footer</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="templateTableBody">
-                <tr><td colspan="4">Loading...</td></tr>
-              </tbody>
+              <thead><tr><th>Name</th><th>Body</th><th class="col-action"></th></tr></thead>
+              <tbody id="templateTableBody"></tbody>
             </table>
           </div>
-
-          <!-- Create Template Subform -->
-          <div id="createTemplateForm" style="display: none; border-top: 1px solid #cbd5e1; padding-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-            <div class="form-group">
-              <label>Template Name:</label>
-              <input type="text" id="newTemplateName" class="input-text" placeholder="e.g. order_update" />
+          <div id="createTemplateForm" class="sub-form" hidden>
+            <div class="field">
+              <label for="newTemplateName">Template name</label>
+              <input type="text" id="newTemplateName" class="input" placeholder="order_update" />
             </div>
-            <div class="form-group">
-              <label>Body (with {{variables}}):</label>
-              <textarea id="newTemplateBody" class="input-text" rows="3" placeholder="Hello {{name}}, your order {{var1}} has been confirmed."></textarea>
+            <div class="field">
+              <label for="newTemplateBody">Body</label>
+              <textarea id="newTemplateBody" class="input" rows="3" placeholder="Hello {{name}}, your order {{var1}} is confirmed."></textarea>
             </div>
-            <div style="display: flex; gap: 8px;">
-              <button id="btnSaveNewTemplate" class="btn btn-primary btn-sm">Save to Server</button>
+            <div class="row-gap">
+              <button id="btnSaveNewTemplate" class="btn btn-sm btn-primary">Save to server</button>
               <button id="btnCancelNewTemplate" class="btn btn-sm">Cancel</button>
             </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button class="btn btnCloseModal" data-modal="modalTemplates">Close</button>
-        </div>
       </div>
     </div>
 
-    <!-- Addressbook & Groups Import Modal -->
-    <div id="modalAddressbook" class="modal-overlay" style="display: none;">
-      <div class="modal-card" style="width: 680px;">
+    <!-- Address book -->
+    <div id="modalAddressbook" class="modal-overlay" hidden>
+      <div class="modal-card modal-md" role="dialog" aria-modal="true" aria-labelledby="ttlAb">
         <div class="modal-header">
-          <span>Import from WhatsApp Session Contacts & Groups</span>
-          <button class="btn btn-sm btnCloseModal" data-modal="modalAddressbook">✕</button>
+          <h3 id="ttlAb"><i data-icon="users"></i>Import from WhatsApp</h3>
+          <button class="btn btn-icon btnCloseModal" data-modal="modalAddressbook" aria-label="Close"><i data-icon="x"></i></button>
         </div>
         <div class="modal-body">
-          <div style="display: flex; gap: 10px;">
-            <button id="btnTabLoadContacts" class="btn btn-primary btn-sm">Session Contacts</button>
-            <button id="btnTabLoadGroups" class="btn btn-sm">Session Groups</button>
+          <div class="row-between wrap">
+            <div class="seg">
+              <button id="btnTabLoadContacts" class="seg-btn active">Contacts</button>
+              <button id="btnTabLoadGroups" class="seg-btn">Groups</button>
+            </div>
+            <label class="search-field grow">
+              <i data-icon="search" data-size="15"></i>
+              <input type="search" id="addressbookSearchInput" class="input" placeholder="Filter list" aria-label="Filter list" />
+            </label>
           </div>
-          <div class="table-container" style="max-height: 300px;">
+          <div class="table-wrap modal-table">
             <table class="data-table" id="addressbookTable">
-              <thead>
-                <tr id="addressbookTableHeaders">
-                  <th>Select</th>
-                  <th>Name</th>
-                  <th>Number</th>
-                </tr>
-              </thead>
-              <tbody id="addressbookTableBody">
-                <tr><td colspan="3" style="text-align: center;">Click above to fetch records.</td></tr>
-              </tbody>
+              <thead><tr><th class="col-check"><input type="checkbox" id="addressbookSelectAll" checked aria-label="Select all" /></th><th>Name</th><th>Number / ID</th></tr></thead>
+              <tbody id="addressbookTableBody"></tbody>
             </table>
           </div>
         </div>
         <div class="modal-footer">
-          <button id="btnImportSelectedAddressbook" class="btn btn-primary">Import Selected</button>
-          <button class="btn btnCloseModal" data-modal="modalAddressbook">Close</button>
+          <span id="addressbookSelectedCount" class="meta-text">0 selected</span>
+          <button class="btn btnCloseModal" data-modal="modalAddressbook">Cancel</button>
+          <button id="btnImportSelectedAddressbook" class="btn btn-primary">Import selected</button>
         </div>
       </div>
     </div>
 
-    <!-- Analytics & Audit Logs Modal -->
-    <div id="modalStats" class="modal-overlay" style="display: none;">
-      <div class="modal-card" style="width: 720px;">
+    <!-- Analytics -->
+    <div id="modalStats" class="modal-overlay" hidden>
+      <div class="modal-card modal-md" role="dialog" aria-modal="true" aria-labelledby="ttlStats">
         <div class="modal-header">
-          <span>OpenWA Gateway Analytics & Audit Trail</span>
-          <button class="btn btn-sm btnCloseModal" data-modal="modalStats">✕</button>
+          <h3 id="ttlStats"><i data-icon="chart"></i>Gateway analytics</h3>
+          <button class="btn btn-icon btnCloseModal" data-modal="modalStats" aria-label="Close"><i data-icon="x"></i></button>
         </div>
         <div class="modal-body">
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-            <div class="config-card" style="text-align: center;">
-              <small style="color: #64748b;">Total Sent</small>
-              <strong id="gwStatSent" style="font-size: 18px; color: #16a34a;">0</strong>
+          <div class="mini-kpis">
+            <div><span>Sent</span><strong id="gwStatSent" class="ok">0</strong></div>
+            <div><span>Received</span><strong id="gwStatReceived" class="info">0</strong></div>
+            <div><span>Failed</span><strong id="gwStatFailed" class="bad">0</strong></div>
+            <div><span>Active sessions</span><strong id="gwStatSessions">0</strong></div>
+          </div>
+          <h4 class="section-label">Recent audit log</h4>
+          <div class="table-wrap modal-table">
+            <table class="data-table">
+              <thead><tr><th>Action</th><th>Severity</th><th>Session</th><th>Time</th></tr></thead>
+              <tbody id="auditTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Session manager -->
+    <div id="modalSessionManager" class="modal-overlay" hidden>
+      <div class="modal-card modal-lg" role="dialog" aria-modal="true" aria-labelledby="ttlSm">
+        <div class="modal-header">
+          <h3 id="ttlSm"><i data-icon="phone"></i>WhatsApp numbers</h3>
+          <button class="btn btn-icon btnCloseModal" data-modal="modalSessionManager" aria-label="Close"><i data-icon="x"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="sm-grid">
+            <div class="sub-card">
+              <h4 class="section-label">Add a number</h4>
+              <p class="meta-text">Give the session a short name, then link it with a QR code or pairing code.</p>
+              <div class="field">
+                <label for="newSessionNameInput">Session name</label>
+                <div class="input-group">
+                  <input type="text" id="newSessionNameInput" class="input" placeholder="sales-desk" />
+                  <button id="btnCreateNewSession" class="btn btn-primary"><i data-icon="plus" data-size="14"></i>Create</button>
+                </div>
+                <small class="hint">3–50 characters: letters, numbers, - or _</small>
+              </div>
+              <div id="createSessionMessage" class="test-result" hidden></div>
             </div>
-            <div class="config-card" style="text-align: center;">
-              <small style="color: #64748b;">Total Received</small>
-              <strong id="gwStatReceived" style="font-size: 18px; color: #0284c7;">0</strong>
-            </div>
-            <div class="config-card" style="text-align: center;">
-              <small style="color: #64748b;">Total Failed</small>
-              <strong id="gwStatFailed" style="font-size: 18px; color: #ef4444;">0</strong>
-            </div>
-            <div class="config-card" style="text-align: center;">
-              <small style="color: #64748b;">Active Sessions</small>
-              <strong id="gwStatSessions" style="font-size: 18px; color: #7c3aed;">0</strong>
+
+            <div id="sessionConnectionCard" class="sub-card qr-card">
+              <div id="qrPlaceholder" class="empty-state small">
+                <i data-icon="qr" data-size="30"></i>
+                <strong>No connection in progress</strong>
+                <span>Choose “Connect” on a number below to show its QR code.</span>
+              </div>
+
+              <div id="qrActiveContainer" class="qr-active" hidden>
+                <div class="row-between">
+                  <span class="meta-text">Linking <strong id="qrSessionNameText">—</strong></span>
+                  <div class="row-gap">
+                    <button id="btnManualRefreshQr" class="btn btn-sm" title="Reload QR code">Refresh</button>
+                    <span id="qrStatusBadge" class="status-badge neutral">Waiting</span>
+                  </div>
+                </div>
+                <div class="seg">
+                  <button id="tabModeQr" class="seg-btn active">QR code</button>
+                  <button id="tabModePairing" class="seg-btn">Pairing code</button>
+                </div>
+
+                <div id="sectionModeQr" class="qr-section">
+                  <div class="qr-size-row">
+                    <div class="row-gap">
+                      <button id="btnQrSizeSmall" class="btn btn-xs qr-size-btn active" data-size="160">1×</button>
+                      <button id="btnQrSizeMed" class="btn btn-xs qr-size-btn" data-size="220">1.5×</button>
+                      <button id="btnQrSizeLarge" class="btn btn-xs qr-size-btn" data-size="280">2×</button>
+                    </div>
+                    <button id="btnOpenQrEnlargeModal" class="btn btn-xs"><i data-icon="maximize" data-size="12"></i>Enlarge</button>
+                  </div>
+                  <div id="qrImageWrapper" class="qr-box" title="Click to enlarge">
+                    <img id="sessionQrImg" src="" alt="WhatsApp QR code" hidden />
+                    <div id="qrHoverHint" class="qr-hint">Click to enlarge</div>
+                    <div id="qrLoadingOverlay" class="qr-overlay"><span class="spinner"></span><span>Starting engine…</span></div>
+                  </div>
+                  <small class="hint center">WhatsApp → Linked devices → Link a device</small>
+                </div>
+
+                <div id="sectionModePairing" class="qr-section" hidden>
+                  <p class="meta-text">Enter the phone number with country code to get an 8-character code.</p>
+                  <div class="input-group">
+                    <input type="tel" id="pairingPhoneInput" class="input" placeholder="919876543210" />
+                    <button id="btnGetPairingCode" class="btn btn-primary">Get code</button>
+                  </div>
+                  <div id="pairingCodeResult" class="pairing-result" hidden>
+                    <small>Your pairing code</small>
+                    <div id="pairingCodeValue" class="pairing-code"></div>
+                    <button id="btnCopyPairingCode" class="btn btn-sm"><i data-icon="copy" data-size="13"></i>Copy</button>
+                    <small>On the phone: “Link with phone number instead”.</small>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <h4 style="margin-top: 10px; font-size: 12px; color: #0a253c;">Recent Gateway Audit Logs</h4>
-          <div class="table-container" style="max-height: 220px;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Action</th>
-                  <th>Severity</th>
-                  <th>Session</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody id="auditTableBody">
-                <tr><td colspan="4">Loading audit logs...</td></tr>
-              </tbody>
+          <div class="row-between">
+            <h4 class="section-label">All numbers</h4>
+            <button id="btnRefreshSessionTable" class="btn btn-sm"><i data-icon="refresh" data-size="13"></i>Refresh</button>
+          </div>
+          <div class="table-wrap modal-table">
+            <table class="data-table sessions-table" id="sessionsManagerTable">
+              <thead><tr><th class="col-check">Use</th><th>Session</th><th class="col-phone">Phone</th><th class="col-status">Status</th><th>Actions</th></tr></thead>
+              <tbody id="sessionsManagerBody"></tbody>
             </table>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btnCloseModal" data-modal="modalStats">Close</button>
+          <span class="meta-text">Sending from: <strong id="activeSessionFooterDisplay">None</strong></span>
+          <button class="btn btnCloseModal" data-modal="modalSessionManager">Done</button>
         </div>
       </div>
     </div>
 
-    <!-- Session Manager & QR Code Modal -->
-    <div id="modalSessionManager" class="modal-overlay" style="display: none;">
-      <div class="modal-card" style="width: 840px; max-width: 95vw;">
+    <!-- Big QR -->
+    <div id="modalQrEnlarge" class="modal-overlay modal-top" hidden>
+      <div class="modal-card modal-sm" role="dialog" aria-modal="true" aria-labelledby="ttlQr">
         <div class="modal-header">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#25d366" stroke-width="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
-            <div>
-              <span style="font-weight: 700; font-size: 14px;">WhatsApp Sessions & Connections</span>
-              <div style="font-size: 11px; color: #94a3b8; font-weight: normal;">Create, connect and manage multiple WhatsApp numbers for your campaigns.</div>
-            </div>
-          </div>
-          <button class="btn btn-sm btnCloseModal" data-modal="modalSessionManager">✕</button>
+          <h3 id="ttlQr"><i data-icon="qr"></i>Scan QR · <span id="enlargedQrSessionName">—</span></h3>
+          <button class="btn btn-icon btnCloseModal" data-modal="modalQrEnlarge" aria-label="Close"><i data-icon="x"></i></button>
         </div>
-
-        <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; max-height: 78vh; overflow-y: auto;">
-          <!-- Top Grid: Create New Session + Live QR Area -->
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-            <!-- Create New Session Card -->
-            <div class="config-card" style="padding: 12px; background: #f8fafc;">
-              <div class="config-card-title" style="font-size: 12px; color: #0f172a; margin-bottom: 8px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="16"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
-                1. Create New WhatsApp Session
-              </div>
-              <p style="font-size: 11px; color: #64748b; margin-bottom: 8px;">
-                Enter a unique name for your new WhatsApp account (e.g. <code>sales-team</code>, <code>support-2</code>, <code>faisal-new</code>).
-              </p>
-              <div class="form-group">
-                <label style="font-size: 11px;">Session Name (alphanumeric & hyphens):</label>
-                <div style="display: flex; gap: 6px;">
-                  <input type="text" id="newSessionNameInput" class="input-text" placeholder="e.g. sales-desk" style="flex: 1;" />
-                  <button id="btnCreateNewSession" class="btn btn-primary btn-sm" style="white-space: nowrap;">
-                    + Create & Launch
-                  </button>
-                </div>
-              </div>
-              <div id="createSessionMessage" style="font-size: 11px; margin-top: 6px; display: none;"></div>
-              
-              <div style="margin-top: 10px; padding: 8px; background: #eff6ff; border-radius: 4px; border: 1px solid #bfdbfe; font-size: 10px; color: #1e40af;">
-                💡 <strong>Tip:</strong> Once created, scan the QR code on the right with your phone's WhatsApp to link it. Multiple sessions can run concurrently!
-              </div>
-            </div>
-
-            <!-- Live QR Scanner / Pairing Area -->
-            <div id="sessionConnectionCard" class="config-card" style="padding: 12px; background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 240px; text-align: center;">
-              <div id="qrPlaceholder" style="color: #64748b; font-size: 11px; padding: 20px;">
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" style="margin-bottom: 6px;"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h.01M17 7h.01M7 17h.01M17 17h.01M12 12h.01"/></svg>
-                <div style="font-weight: 600; color: #475569;">No Session Connection in Progress</div>
-                <div>Select "Scan QR / Connect" on any session below, or create a new session to view its live QR code.</div>
-              </div>
-
-              <!-- Active QR Container -->
-              <div id="qrActiveContainer" style="display: none; width: 100%; flex-direction: column; align-items: center; gap: 8px;">
-                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-                  <span style="font-size: 12px; font-weight: 700; color: #0f172a;">
-                    Session: <strong id="qrSessionNameText" style="color: #0284c7;">—</strong>
-                  </span>
-                  <div style="display: flex; align-items: center; gap: 6px;">
-                    <button id="btnManualRefreshQr" class="btn btn-sm" title="Force reload QR code" style="padding: 1px 6px; font-size: 10px; height: 22px;">↻ Refresh</button>
-                    <span id="qrStatusBadge" class="badge badge-pending">QR Ready</span>
-                  </div>
-                </div>
-
-                <!-- Mode Switcher Tabs: QR vs Phone Pairing Code -->
-                <div class="composer-tabs" style="width: 100%; display: flex; gap: 4px; justify-content: center; margin-bottom: 4px;">
-                  <button id="tabModeQr" class="tab-btn active" style="font-size: 11px; padding: 3px 10px; cursor: pointer;">📷 Scan QR Code</button>
-                  <button id="tabModePairing" class="tab-btn" style="font-size: 11px; padding: 3px 10px; cursor: pointer;">🔢 Phone Pairing Code</button>
-                </div>
-
-                <!-- Tab 1: QR Code Section -->
-                <div id="sectionModeQr" style="display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%;">
-                  
-                  <!-- QR Zoom & Sizing Toolbar -->
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 320px; padding: 2px 2px; margin-bottom: 2px;">
-                    <div style="display: flex; align-items: center; gap: 3px;">
-                      <span style="font-size: 10px; color: #64748b; font-weight: 600;">Zoom:</span>
-                      <button id="btnQrSizeSmall" class="btn btn-sm qr-size-btn active" data-size="160" title="Default Size (160px)" style="font-size: 10px; padding: 1px 6px; height: 22px;">1x</button>
-                      <button id="btnQrSizeMed" class="btn btn-sm qr-size-btn" data-size="220" title="Medium Size (220px)" style="font-size: 10px; padding: 1px 6px; height: 22px;">1.5x</button>
-                      <button id="btnQrSizeLarge" class="btn btn-sm qr-size-btn" data-size="280" title="Large Size (280px)" style="font-size: 10px; padding: 1px 6px; height: 22px;">2x</button>
-                    </div>
-                    <button id="btnOpenQrEnlargeModal" class="btn btn-sm btn-primary" title="Open large full-screen QR code" style="font-size: 10px; padding: 2px 9px; height: 22px; display: flex; align-items: center; gap: 4px; background: #059669; border-color: #10b981;">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                      🔍 Enlarge / Big QR
-                    </button>
-                  </div>
-
-                  <!-- QR Display Box (Clickable to Enlarge) -->
-                  <div id="qrImageWrapper" class="qr-zoomable-box" title="Click to open Big QR modal" style="position: relative; width: 160px; height: 160px; background: #ffffff; border: 2px solid #25d366; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(37,211,102,0.15); overflow: hidden; cursor: pointer; transition: width 0.2s ease, height 0.2s ease;">
-                    <img id="sessionQrImg" src="" alt="WhatsApp QR Code" style="width: 150px; height: 150px; object-fit: contain; display: none; transition: width 0.2s ease, height 0.2s ease;" />
-                    <div id="qrHoverHint" class="qr-hover-hint">🔍 Click to Enlarge</div>
-                    <div id="qrLoadingOverlay" style="position: absolute; inset: 0; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; color: #0284c7; gap: 6px;">
-                      <div style="width: 20px; height: 20px; border: 2px solid #cbd5e1; border-top-color: #0284c7; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                      <span>Initializing Engine...</span>
-                    </div>
-                  </div>
-
-                  <div id="qrInstructionsText" style="font-size: 10px; color: #475569;">
-                    Open <strong>WhatsApp > Linked devices > Link a device</strong> and scan the code.
-                  </div>
-                  <div style="display: flex; align-items: center; gap: 4px; font-size: 10px; color: #059669;">
-                    <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 1.5s infinite;"></span>
-                    <span>Live auto-refreshes every 20-30s</span>
-                  </div>
-                </div>
-
-                <!-- Tab 2: Phone Pairing Code Section -->
-                <div id="sectionModePairing" style="display: none; flex-direction: column; align-items: center; gap: 8px; width: 100%; padding: 4px 8px;">
-                  <p style="font-size: 11px; color: #475569; margin: 0;">
-                    Enter your phone number (with country code) to receive an 8-character linking code.
-                  </p>
-                  <div style="display: flex; gap: 6px; width: 100%; max-width: 290px;">
-                    <input type="text" id="pairingPhoneInput" class="input-text" placeholder="e.g. 919876543210" style="font-size: 11px; flex: 1;" />
-                    <button id="btnGetPairingCode" class="btn btn-primary btn-sm" style="font-size: 11px; white-space: nowrap;">Get Code</button>
-                  </div>
-                  <div id="pairingCodeResult" style="display: none; width: 100%; max-width: 290px; text-align: center; padding: 8px; background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 6px;">
-                    <div style="font-size: 10px; color: #065f46; font-weight: 600; text-transform: uppercase;">Your WhatsApp Pairing Code:</div>
-                    <div id="pairingCodeValue" style="font-size: 20px; font-weight: 800; letter-spacing: 3px; color: #059669; font-family: var(--font-mono); margin: 4px 0;"></div>
-                    <button id="btnCopyPairingCode" class="btn btn-sm" style="font-size: 10px; padding: 2px 8px;">📋 Copy Code</button>
-                    <div style="font-size: 10px; color: #047857; margin-top: 4px;">
-                      On phone: Tap <strong>"Link with phone number instead"</strong> and enter this code.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div class="modal-body center-col">
+          <div id="enlargedQrBox" class="qr-box qr-big">
+            <img id="enlargedQrImg" src="" alt="WhatsApp QR code (large)" />
+            <div id="enlargedQrLoadingOverlay" class="qr-overlay" hidden><span class="spinner"></span><span>Generating QR…</span></div>
           </div>
-
-          <!-- Bottom: All Sessions List Table -->
-          <div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <span style="font-size: 12px; font-weight: 700; color: #0f172a;">2. All WhatsApp Sessions & Campaign Assignment</span>
-              <button id="btnRefreshSessionTable" class="btn btn-sm" style="font-size: 11px;">↻ Refresh List</button>
-            </div>
-
-            <div class="table-container" style="max-height: 240px; border: 1px solid #cbd5e1; border-radius: 4px;">
-              <table class="data-table" id="sessionsManagerTable">
-                <thead>
-                  <tr>
-                    <th style="width: 50px;">Campaign</th>
-                    <th>Session Name</th>
-                    <th>Phone / Push Name</th>
-                    <th style="width: 90px;">Status</th>
-                    <th style="width: 70px;">Engine</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="sessionsManagerBody">
-                  <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 12px;">Loading sessions...</td></tr>
-                </tbody>
-              </table>
-            </div>
+          <div class="zoom-row">
+            <button id="btnZoomOutSlider" class="btn btn-icon" aria-label="Smaller">−</button>
+            <input type="range" id="qrZoomSlider" min="240" max="480" step="20" value="320" aria-label="QR size" />
+            <button id="btnZoomInSlider" class="btn btn-icon" aria-label="Larger">+</button>
+            <span id="qrZoomValText" class="value-chip">320px</span>
           </div>
+          <small class="hint center">Point your phone camera at the code. It refreshes automatically.</small>
         </div>
-
-        <div class="modal-footer" style="display: flex; justify-content: space-between;">
-          <div style="font-size: 11px; color: #64748b;">
-            Active Campaign Session: <strong id="activeSessionFooterDisplay" style="color: #059669;">None</strong>
-          </div>
-          <button class="btn btnCloseModal" data-modal="modalSessionManager">Close</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ================= Dedicated Big QR Enlarge Modal ================= -->
-    <div id="modalQrEnlarge" class="modal-overlay" style="display: none; z-index: 1050; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px);">
-      <div class="modal-card" style="width: 500px; max-width: 95vw; text-align: center; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
-        <div class="modal-header" style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#25d366" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h.01M17 7h.01M7 17h.01M17 17h.01M12 12h.01"/></svg>
-            <span style="font-weight: 700; font-size: 14px; color: #0f172a;">Scan WhatsApp QR Code — <span id="enlargedQrSessionName" style="color: #0284c7;">—</span></span>
-          </div>
-          <button class="btn btn-sm btnCloseModal" data-modal="modalQrEnlarge">✕</button>
-        </div>
-
-        <div class="modal-body" style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px;">
-          <!-- Big QR Box with glowing contrast border -->
-          <div id="enlargedQrBox" style="position: relative; width: 360px; height: 360px; max-width: 82vw; max-height: 82vw; background: #ffffff; border: 4px solid #25d366; border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(37,211,102,0.25); overflow: hidden; transition: width 0.15s ease, height 0.15s ease;">
-            <img id="enlargedQrImg" src="" alt="WhatsApp Big QR" style="width: 340px; height: 340px; max-width: 78vw; max-height: 78vw; object-fit: contain; display: block;" />
-            <div id="enlargedQrLoadingOverlay" style="position: absolute; inset: 0; background: rgba(255,255,255,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
-              <div style="width: 32px; height: 32px; border: 3px solid #cbd5e1; border-top-color: #059669; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-              <span style="font-weight: 600; color: #059669;">Generating WhatsApp QR...</span>
-            </div>
-          </div>
-
-          <!-- Dynamic Zoom Controls -->
-          <div style="display: flex; align-items: center; gap: 10px; width: 100%; max-width: 380px; justify-content: center; background: #f8fafc; padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <button id="btnZoomOutSlider" class="btn btn-sm" style="font-weight: bold; font-size: 14px; width: 28px; height: 28px; padding: 0;">−</button>
-            <input type="range" id="qrZoomSlider" min="260" max="480" step="20" value="360" style="flex: 1; accent-color: #25d366; cursor: pointer;" />
-            <button id="btnZoomInSlider" class="btn btn-sm" style="font-weight: bold; font-size: 14px; width: 28px; height: 28px; padding: 0;">+</button>
-            <span id="qrZoomValText" style="font-size: 11px; font-weight: 700; color: #0f172a; min-width: 48px;">360px</span>
-          </div>
-
-          <div style="font-size: 12px; color: #334155; line-height: 1.5; max-width: 380px;">
-            Open <strong>WhatsApp > Linked Devices > Link a Device</strong> on your mobile phone and point your camera here.
-          </div>
-
-          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #059669; font-weight: 600;">
-            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1.5s infinite;"></span>
-            <span>Live auto-refreshes every 20-30s</span>
-          </div>
-        </div>
-
-        <div class="modal-footer" style="display: flex; justify-content: space-between; padding: 10px 18px;">
-          <button id="btnEnlargeResetSize" class="btn btn-sm" style="font-size: 11px;">Reset to 360px</button>
+        <div class="modal-footer">
+          <button id="btnEnlargeResetSize" class="btn btn-sm">Reset size</button>
           <button class="btn btn-primary btnCloseModal" data-modal="modalQrEnlarge">Close</button>
         </div>
       </div>
     </div>
 
-    <!-- ================= Reports & Campaign History Modal ================= -->
-    <div id="modalReportsHistory" class="modal-overlay" style="display: none;">
-      <div class="modal-card" style="width: 1050px; max-width: 96vw;">
-        <div class="modal-header" style="padding: 12px 18px;">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(2,132,199,0.15); display: flex; align-items: center; justify-content: center;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            </div>
-            <div>
-              <div style="font-weight: 700; font-size: 15px; color: #0f172a;">Campaign Reports & Delivery Audit History</div>
-              <div style="font-size: 11px; color: #64748b; font-weight: normal;">
-                Permanent storage powered by browser IndexedDB. Data remains 100% safe after page refresh, session deletion, or logout.
-              </div>
-            </div>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <button id="btnExportAllSummaryExcel" class="btn btn-sm" title="Export all campaigns summary to Excel (.xlsx)" style="background: #059669; color: #ffffff; border: 1px solid #10b981; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-              Export Summary .xlsx
-            </button>
-            <button class="btn btn-sm btnCloseModal" data-modal="modalReportsHistory">✕</button>
+    <!-- Reports & history -->
+    <div id="modalReportsHistory" class="modal-overlay" hidden>
+      <div class="modal-card modal-xl" role="dialog" aria-modal="true" aria-labelledby="ttlRep">
+        <div class="modal-header">
+          <h3 id="ttlRep"><i data-icon="file"></i>Reports &amp; history</h3>
+          <div class="row-gap">
+            <button id="btnExportAllSummaryExcel" class="btn btn-sm"><i data-icon="download" data-size="13"></i><span>Summary .xlsx</span></button>
+            <button class="btn btn-icon btnCloseModal" data-modal="modalReportsHistory" aria-label="Close"><i data-icon="x"></i></button>
           </div>
         </div>
+        <div class="modal-body">
+          <div class="mini-kpis">
+            <div><span>Campaigns</span><strong id="kpiTotalCampaigns">0</strong></div>
+            <div><span>Messages sent</span><strong id="kpiTotalSent" class="ok">0</strong></div>
+            <div><span>Failed</span><strong id="kpiTotalFailed" class="bad">0</strong></div>
+            <div><span>Success rate</span><strong id="kpiSuccessRate" class="info">—</strong></div>
+          </div>
 
-        <div class="modal-body" style="padding: 14px 18px; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
-          
-          <!-- Top KPI Metrics Cards -->
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-            <div class="config-card" style="padding: 10px; text-align: center; background: #f8fafc; border-top: 3px solid #0284c7;">
-              <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Total Campaigns</div>
-              <div id="kpiTotalCampaigns" style="font-size: 22px; font-weight: 800; color: #0284c7; margin-top: 2px;">0</div>
+          <div class="row-between wrap">
+            <div class="seg">
+              <button id="tabBtnBulkReports" class="seg-btn active">Campaigns (<span id="tabCountBulk">0</span>)</button>
+              <button id="tabBtnSingleReports" class="seg-btn">Single messages (<span id="tabCountSingle">0</span>)</button>
             </div>
-            <div class="config-card" style="padding: 10px; text-align: center; background: #f8fafc; border-top: 3px solid #059669;">
-              <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Messages Sent</div>
-              <div id="kpiTotalSent" style="font-size: 22px; font-weight: 800; color: #059669; margin-top: 2px;">0</div>
-            </div>
-            <div class="config-card" style="padding: 10px; text-align: center; background: #f8fafc; border-top: 3px solid #ef4444;">
-              <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Failed Messages</div>
-              <div id="kpiTotalFailed" style="font-size: 22px; font-weight: 800; color: #ef4444; margin-top: 2px;">0</div>
-            </div>
-            <div class="config-card" style="padding: 10px; text-align: center; background: #f8fafc; border-top: 3px solid #8b5cf6;">
-              <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Overall Success Rate</div>
-              <div id="kpiSuccessRate" style="font-size: 22px; font-weight: 800; color: #8b5cf6; margin-top: 2px;">100%</div>
+            <div class="row-gap grow-sm">
+              <label class="search-field grow">
+                <i data-icon="search" data-size="15"></i>
+                <input type="search" id="reportSearchInput" class="input" placeholder="Search campaigns" aria-label="Search campaigns" />
+              </label>
+              <button id="btnRefreshReportsView" class="btn btn-icon" title="Refresh" aria-label="Refresh"><i data-icon="refresh"></i></button>
+              <button id="btnClearAllReportsBtn" class="btn btn-icon btn-ghost-danger" title="Delete all reports" aria-label="Delete all reports"><i data-icon="trash"></i></button>
             </div>
           </div>
 
-          <!-- Section Switcher Tabs -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-            <div style="display: flex; gap: 8px;">
-              <button id="tabBtnBulkReports" class="tab-btn active" style="font-size: 12px; font-weight: 600; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; background: #0284c7; color: #ffffff;">
-                📋 Bulk Campaigns (<span id="tabCountBulk">0</span>)
-              </button>
-              <button id="tabBtnSingleReports" class="tab-btn" style="font-size: 12px; font-weight: 600; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; background: #e2e8f0; color: #475569;">
-                💬 Single & Test Messages (<span id="tabCountSingle">0</span>)
-              </button>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <input type="text" id="reportSearchInput" class="input-text" placeholder="Search campaign, number..." style="font-size: 11px; width: 180px; padding: 4px 8px;" />
-              <button id="btnRefreshReportsView" class="btn btn-sm" title="Refresh Reports Data" style="padding: 4px 8px;">↻ Refresh</button>
-              <button id="btnClearAllReportsBtn" class="btn btn-sm btn-danger" style="font-size: 11px; padding: 4px 8px;" title="Clear all campaign and message reports">🗑️ Clear All</button>
-            </div>
-          </div>
-
-          <!-- View 1: Bulk Campaigns Table View -->
           <div id="viewBulkCampaigns">
-            <div class="table-container" style="max-height: 380px; border: 1px solid #cbd5e1; border-radius: 6px;">
-              <table class="data-table" id="campaignsHistoryTable">
+            <div class="table-wrap modal-table tall">
+              <table class="data-table reports-table" id="campaignsHistoryTable">
                 <thead>
                   <tr>
-                    <th style="width: 140px;">Date & Time</th>
-                    <th>Campaign Name & Preview</th>
-                    <th style="width: 120px;">Session / Account</th>
-                    <th style="width: 70px; text-align: center;">Total</th>
-                    <th style="width: 70px; text-align: center;">Sent</th>
-                    <th style="width: 70px; text-align: center;">Failed</th>
-                    <th style="width: 90px; text-align: center;">Success</th>
-                    <th style="width: 95px;">Status</th>
-                    <th style="width: 180px; text-align: center;">Actions</th>
+                    <th>Campaign</th>
+                    <th class="col-hide-sm">Number</th>
+                    <th class="num">Sent</th>
+                    <th class="num">Failed</th>
+                    <th class="num col-hide-sm">Success</th>
+                    <th class="col-status">Status</th>
+                    <th class="col-action"></th>
                   </tr>
                 </thead>
-                <tbody id="campaignsHistoryBody">
-                  <tr>
-                    <td colspan="9" style="text-align: center; color: #94a3b8; padding: 20px;">
-                      No campaigns found. Your executed campaigns will permanently be recorded here.
-                    </td>
-                  </tr>
-                </tbody>
+                <tbody id="campaignsHistoryBody"></tbody>
               </table>
             </div>
           </div>
 
-          <!-- View 2: Single Messages Log View -->
-          <div id="viewSingleMessages" style="display: none;">
-            <div class="table-container" style="max-height: 380px; border: 1px solid #cbd5e1; border-radius: 6px;">
+          <div id="viewSingleMessages" hidden>
+            <div class="table-wrap modal-table tall">
               <table class="data-table" id="singleMessagesTable">
-                <thead>
-                  <tr>
-                    <th style="width: 140px;">Date & Time</th>
-                    <th style="width: 140px;">Recipient</th>
-                    <th style="width: 120px;">Session</th>
-                    <th>Message Content</th>
-                    <th style="width: 90px;">Status</th>
-                    <th>Message ID / Error Detail</th>
-                  </tr>
-                </thead>
-                <tbody id="singleMessagesBody">
-                  <tr>
-                    <td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">
-                      No single messages recorded yet.
-                    </td>
-                  </tr>
-                </tbody>
+                <thead><tr><th>Time</th><th>Recipient</th><th class="col-hide-sm">Session</th><th>Message</th><th class="col-status">Status</th></tr></thead>
+                <tbody id="singleMessagesBody"></tbody>
               </table>
             </div>
           </div>
 
-          <!-- View 3: Campaign Detail Drilldown Sub-view (Numbers List) -->
-          <div id="viewCampaignDetailDrilldown" style="display: none; flex-direction: column; gap: 10px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px;">
-              <div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <button id="btnBackToCampaignsList" class="btn btn-sm" style="font-size: 11px; padding: 3px 8px;">← Back to List</button>
-                  <strong id="drilldownCampaignTitle" style="font-size: 13px; color: #166534;">Campaign Details</strong>
-                  <span id="drilldownSessionBadge" class="cap-pill supported" style="font-size: 10px;">default</span>
-                </div>
-                <div id="drilldownMetaSubtitle" style="font-size: 11px; color: #475569; margin-top: 3px;">
-                  Created: - | Total: 0 | Sent: 0 | Failed: 0
-                </div>
-              </div>
-
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <div style="display: flex; gap: 4px;">
-                  <button class="btn btn-sm drilldownFilterBtn active" data-filter="all" style="font-size: 11px; padding: 3px 8px;">All (<span id="drilldownCountAll">0</span>)</button>
-                  <button class="btn btn-sm drilldownFilterBtn" data-filter="sent" style="font-size: 11px; padding: 3px 8px; color: #059669;">Sent (<span id="drilldownCountSent">0</span>)</button>
-                  <button class="btn btn-sm drilldownFilterBtn" data-filter="failed" style="font-size: 11px; padding: 3px 8px; color: #ef4444;">Failed (<span id="drilldownCountFailed">0</span>)</button>
-                </div>
-                <button id="btnExportSingleCampaignExcel" class="btn btn-sm btn-primary" style="font-size: 11px; padding: 3px 10px; display: flex; align-items: center; gap: 4px;">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                  Export Excel (.xlsx)
-                </button>
-                <button id="btnRetryFailedFromReport" class="btn btn-sm btn-danger" style="font-size: 11px; padding: 3px 10px; display: none;">
-                  🔄 Re-Send Failed Numbers
-                </button>
+          <div id="viewCampaignDetailDrilldown" class="drilldown" hidden>
+            <div class="drill-head">
+              <button id="btnBackToCampaignsList" class="btn btn-sm">← Back</button>
+              <div class="drill-title">
+                <strong id="drilldownCampaignTitle">Campaign</strong>
+                <span id="drilldownSessionBadge" class="status-badge neutral">—</span>
+                <small id="drilldownMetaSubtitle" class="meta-text"></small>
               </div>
             </div>
-
-            <!-- Message Preview Box -->
-            <div id="drilldownMessagePreviewBox" style="font-size: 11px; padding: 8px 12px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; color: #334155;">
-              <strong>Message Content Sent:</strong> <span id="drilldownMessagePreviewText">...</span>
+            <div class="row-between wrap">
+              <div class="seg">
+                <button class="seg-btn drilldownFilterBtn active" data-filter="all">All (<span id="drilldownCountAll">0</span>)</button>
+                <button class="seg-btn drilldownFilterBtn" data-filter="sent">Sent (<span id="drilldownCountSent">0</span>)</button>
+                <button class="seg-btn drilldownFilterBtn" data-filter="failed">Failed (<span id="drilldownCountFailed">0</span>)</button>
+              </div>
+              <div class="row-gap">
+                <button id="btnRetryFailedFromReport" class="btn btn-sm btn-danger" hidden>Re-send failed</button>
+                <button id="btnExportSingleCampaignExcel" class="btn btn-sm btn-primary"><i data-icon="download" data-size="13"></i>Excel</button>
+              </div>
             </div>
-
-            <!-- Recipient Numbers Table -->
-            <div class="table-container" style="max-height: 320px; border: 1px solid #cbd5e1; border-radius: 6px;">
+            <div class="quote"><strong>Message:</strong> <span id="drilldownMessagePreviewText">—</span></div>
+            <div class="table-wrap modal-table">
               <table class="data-table" id="drilldownNumbersTable">
-                <thead>
-                  <tr>
-                    <th style="width: 45px;">#</th>
-                    <th style="width: 140px;">Recipient Number</th>
-                    <th style="width: 120px;">Contact Name</th>
-                    <th style="width: 80px;">Status</th>
-                    <th>Message / Error Details</th>
-                    <th style="width: 140px;">Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody id="drilldownNumbersBody">
-                  <tr>
-                    <td colspan="6" style="text-align: center; color: #94a3b8; padding: 14px;">Loading logs...</td>
-                  </tr>
-                </tbody>
+                <thead><tr><th class="col-num">#</th><th>Recipient</th><th class="col-hide-sm">Name</th><th class="col-status">Status</th><th>Detail</th><th class="col-time">Time</th></tr></thead>
+                <tbody id="drilldownNumbersBody"></tbody>
               </table>
             </div>
           </div>
-
         </div>
-
-        <div class="modal-footer" style="display: flex; justify-content: space-between; padding: 10px 18px;">
-          <div style="font-size: 11px; color: #64748b;">
-            💡 <strong>Pro Tip:</strong> Data is saved offline in IndexedDB on this machine. Session deletes will not touch these reports.
-          </div>
+        <div class="modal-footer">
+          <span class="meta-text">Reports are stored in this browser only.</span>
           <button class="btn btnCloseModal" data-modal="modalReportsHistory">Close</button>
         </div>
       </div>
     </div>
 
-    <!-- Application Script -->
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=20261112b"></script>
   </body>
 </html>

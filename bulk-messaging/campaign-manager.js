@@ -4,7 +4,7 @@
  * polling GET /messages/batch/{batchId}, cancellation, scheduling, retries, and exporting.
  */
 
-import { ReportStore } from './report-store.js';
+import { ReportStore } from './report-store.js?v=20261112b';
 
 export class CampaignManager {
   constructor(apiService) {
@@ -102,31 +102,49 @@ export class CampaignManager {
   }
 
   /**
-   * Build BulkMessageItemDto objects for API submission
+   * Non-empty message blocks, in order. `texts` (one entry per composer block) takes precedence over
+   * the legacy single `text` field.
+   */
+  static getTextBlocks(messageConfig) {
+    const raw = Array.isArray(messageConfig?.texts) ? messageConfig.texts : [messageConfig?.text];
+    return raw.map(t => (typeof t === 'string' ? t.trim() : '')).filter(Boolean);
+  }
+
+  static hasMediaPayload(messageConfig) {
+    const { type, media } = messageConfig || {};
+    return ['image', 'video', 'audio', 'document'].includes(type) && Boolean(media?.url || media?.base64);
+  }
+
+  /** How many BulkMessageItemDto entries one recipient produces for this config. */
+  static itemsPerRecipient(messageConfig) {
+    const blocks = CampaignManager.getTextBlocks(messageConfig).length;
+    if (!CampaignManager.hasMediaPayload(messageConfig)) return Math.max(1, blocks);
+    // Without separate texts the first block rides in the media caption.
+    const separate = messageConfig.sendSeparateTextMessage !== false;
+    return 1 + (separate ? blocks : Math.max(0, blocks - 1));
+  }
+
+  /**
+   * Build BulkMessageItemDto objects for API submission. Each message block becomes its own text
+   * item; a recipient's items stay adjacent so the server sends them in order.
    */
   static formatMessageItems(recipients, messageConfig) {
-    const { type, text, media, mentions, sendSeparateTextMessage = true } = messageConfig;
-    const hasMedia = ['image', 'video', 'audio', 'document'].includes(type) && (media?.url || media?.base64);
-    const hasText = Boolean(text && text.trim());
+    const { type, media, mentions, sendSeparateTextMessage = true } = messageConfig;
+    const hasMedia = CampaignManager.hasMediaPayload(messageConfig);
+    const blocks = CampaignManager.getTextBlocks(messageConfig);
     const mediaCaption = (media?.caption && media.caption.trim()) || '';
+    const mentionPart = mentions && mentions.length > 0 ? { mentions } : {};
 
     const items = [];
 
     recipients.forEach(r => {
       const chatId = r.chatId || (r.number ? `${r.number}@c.us` : '');
       const variables = r.variables || {};
+      const pushText = text => items.push({ chatId, type: 'text', content: { text, ...mentionPart }, variables });
 
       if (!hasMedia) {
-        // Plain text message
-        items.push({
-          chatId,
-          type: 'text',
-          content: {
-            text: text || '',
-            ...(mentions && mentions.length > 0 ? { mentions } : {}),
-          },
-          variables,
-        });
+        if (blocks.length === 0) pushText('');
+        blocks.forEach(pushText);
         return;
       }
 
@@ -138,53 +156,25 @@ export class CampaignManager {
       if (media?.filename && type === 'document') mediaPayload.filename = media.filename;
       if (media?.ptt && type === 'audio') mediaPayload.ptt = true;
 
-      // When sendSeparateTextMessage is true AND there is text in the main message box:
-      // Send 1 Media item (with mediaCaption if provided), AND 1 Text item (with main text)!
-      if (sendSeparateTextMessage && hasText) {
-        // 1. Media item (with file caption if provided)
-        items.push({
-          chatId,
-          type,
-          content: {
-            [type]: mediaPayload,
-            ...(mediaCaption ? { caption: mediaCaption } : {}),
-            ...(mentions && mentions.length > 0 ? { mentions } : {}),
-          },
-          variables,
-        });
+      // Separate texts: the media item carries only the file caption, then every block follows.
+      // Otherwise the first block is merged into the caption and any further blocks follow.
+      const separate = sendSeparateTextMessage !== false;
+      const captionText = separate || blocks.length === 0
+        ? mediaCaption
+        : [mediaCaption, blocks[0]].filter(Boolean).join('\n\n');
 
-        // 2. Main Message Text item (with template variables)
-        items.push({
-          chatId,
-          type: 'text',
-          content: {
-            text: text.trim(),
-            ...(mentions && mentions.length > 0 ? { mentions } : {}),
-          },
-          variables,
-        });
-      } else {
-        // Single message: combine caption if both exist, or use whichever is provided
-        let captionText = undefined;
-        if (mediaCaption && hasText) {
-          captionText = `${mediaCaption}\n\n${text.trim()}`;
-        } else if (mediaCaption) {
-          captionText = mediaCaption;
-        } else if (hasText) {
-          captionText = text.trim();
-        }
+      items.push({
+        chatId,
+        type,
+        content: {
+          [type]: mediaPayload,
+          ...(captionText ? { caption: captionText } : {}),
+          ...mentionPart,
+        },
+        variables,
+      });
 
-        items.push({
-          chatId,
-          type,
-          content: {
-            [type]: mediaPayload,
-            ...(captionText ? { caption: captionText } : {}),
-            ...(mentions && mentions.length > 0 ? { mentions } : {}),
-          },
-          variables,
-        });
-      }
+      (separate ? blocks : blocks.slice(1)).forEach(pushText);
     });
 
     return items;
@@ -218,9 +208,7 @@ export class CampaignManager {
     this.interBatchDelay = Math.max(10, Number(interBatchDelaySeconds) || 30);
 
     // Calculate effective batch chunk size so that total items per batch does not exceed 100
-    const hasMedia = ['image', 'video', 'audio', 'document'].includes(messageConfig.type) && (messageConfig.media?.url || messageConfig.media?.base64);
-    const hasText = Boolean(messageConfig.text && messageConfig.text.trim());
-    const itemsPerRecipient = (hasMedia && hasText && messageConfig.sendSeparateTextMessage !== false) ? 2 : 1;
+    const itemsPerRecipient = CampaignManager.itemsPerRecipient(messageConfig);
     const effectiveBatchSize = Math.max(1, Math.min(Math.floor(batchSize / itemsPerRecipient), 100));
 
     // Chunk into batches ensuring <= 100 items per batch
@@ -323,7 +311,8 @@ export class CampaignManager {
         sentCount: 0,
         failedCount: 0,
         pendingCount: this.stats.totalMessages,
-        messagePreview: CampaignManager.getItemContentPreview(this.batches[0]?.items[0]) || this.messageConfig?.text || '',
+        messagePreview: CampaignManager.getTextBlocks(this.messageConfig).join('\n\n---\n\n')
+          || CampaignManager.getItemContentPreview(this.batches[0]?.items[0]) || '',
         mediaType: this.messageConfig?.type || 'text',
         hasPtt: Boolean(this.messageConfig?.media?.ptt),
         options: this.options,
