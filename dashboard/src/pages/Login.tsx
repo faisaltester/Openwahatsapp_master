@@ -5,6 +5,7 @@ import { GithubIcon } from '../components/GithubIcon';
 import { CustomSelect } from '../components/CustomSelect';
 import { languageOptions, resolveSupportedLanguage, type SupportedLanguage } from '../i18n';
 import { API_BASE_URL } from '../services/api';
+import { useBranding } from '../hooks/useBranding';
 import './Login.css';
 
 interface LoginProps { onLogin: (role?: string) => void; }
@@ -17,6 +18,14 @@ export function Login({ onLogin }: LoginProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const currentLang = resolveSupportedLanguage(i18n.resolvedLanguage || i18n.language);
+  const brand = useBranding(
+    t('login.version', {
+      version: __APP_VERSION__,
+      // ISO date (YYYYMMDD) so the format is stable across locales/regions instead of the
+      // locale-dependent toLocaleDateString() which renders differently per browser region.
+      date: new Date(__BUILD_TIME__).toISOString().slice(0, 10).replace(/-/g, ''),
+    }),
+  );
 
   const changeLanguage = (language: SupportedLanguage) => {
     void i18n.changeLanguage(language);
@@ -61,15 +70,8 @@ export function Login({ onLogin }: LoginProps) {
     <div className="login-container">
       <div className="login-card">
         <div className="login-logo">
-          <img src="/openwa_logo.webp" alt="OpenWA" className="logo-icon" />
-          <span className="version-info">
-            {t('login.version', {
-              version: __APP_VERSION__,
-              // ISO date (YYYYMMDD) so the format is stable across locales/regions instead of the
-              // locale-dependent toLocaleDateString() which renders differently per browser region.
-              date: new Date(__BUILD_TIME__).toISOString().slice(0, 10).replace(/-/g, ''),
-            })}
-          </span>
+          <img src={brand.logo} alt={brand.appName} className="logo-icon" />
+          {brand.version && <span className="version-info">{brand.version}</span>}
         </div>
 
         <div className="login-language">
@@ -105,12 +107,15 @@ export function Login({ onLogin }: LoginProps) {
           </button>
         </form>
 
-        <p className="login-help">
-          {t('login.help')}{' '}
-          <a href="https://docs.open-wa.org" target="_blank" rel="noopener noreferrer">
-            {t('login.viewDocs')}
-          </a>
-        </p>
+        {/* Shown only when an admin turns it on under Branding. */}
+        {brand.help && (
+          <p className="login-help">
+            {brand.help.text}{' '}
+            <a href={brand.help.url} target="_blank" rel="noopener noreferrer">
+              {brand.help.linkText}
+            </a>
+          </p>
+        )}
       </div>
 
       <footer className="login-footer">

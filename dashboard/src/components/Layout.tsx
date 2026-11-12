@@ -24,11 +24,13 @@ import {
   UsersRound,
   Bot,
   CreditCard,
+  Palette,
 } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { type UserRole } from '../hooks/useRole';
 import { languageOptions, resolveSupportedLanguage, rtlLanguages, type SupportedLanguage } from '../i18n';
 import { healthApi } from '../services/api';
+import { useBranding } from '../hooks/useBranding';
 import './Layout.css';
 
 interface LayoutProps {
@@ -51,6 +53,7 @@ const allNavItems = [
   { to: '/plugins', icon: Puzzle, key: 'plugins' as const, adminOnly: true },
   { to: '/ai-support', icon: Bot, key: 'aiSupport' as const, adminOnly: true, label: 'AI Support' },
   { to: '/logs', icon: FileText, key: 'logs' as const, adminOnly: false },
+  { to: '/branding', icon: Palette, key: 'branding' as const, adminOnly: true, label: 'Branding' },
 ];
 
 const themeIcons = { light: Sun, dark: Moon, system: Monitor };
@@ -72,6 +75,7 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
   // Show the build-time version immediately, then replace it with the live running version from the
   // backend so a stale-built bundle can't display the wrong number. Falls back silently on error.
   const [version, setVersion] = useState(__APP_VERSION__);
+  const brand = useBranding(`v${version}`);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement>(null);
 
@@ -151,8 +155,8 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
             {isMobileOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
           <div className="mobile-brand">
-            <img src="/openwa_logo.webp" alt="OpenWA" className="sidebar-logo" />
-            <span className="brand-name">{t('common.appName')}</span>
+            <img src={brand.logo} alt={brand.appName} className="sidebar-logo" />
+            <span className="brand-name">{brand.appName}</span>
           </div>
           <div style={{ width: 40 }} />
         </header>
@@ -164,11 +168,11 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
         className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobile ? 'mobile' : ''} ${isMobileOpen ? 'open' : ''}`}
       >
         <div className="sidebar-header">
-          <img src="/openwa_logo.webp" alt="OpenWA" className="sidebar-logo" />
+          <img src={brand.logo} alt={brand.appName} className="sidebar-logo" />
           {!isCollapsed && (
             <div className="sidebar-brand">
-              <span className="brand-name">{t('common.appName')}</span>
-              <span className="brand-version">v{version}</span>
+              <span className="brand-name">{brand.appName}</span>
+              {brand.version && <span className="brand-version">{brand.version}</span>}
             </div>
           )}
         </div>
@@ -196,7 +200,7 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
 
         <nav className="sidebar-nav">
           {navItems.map(({ to, icon: Icon, key }) => {
-            const label = t(`nav.${key}`, { defaultValue: key === 'aiSupport' ? 'AI Support' : key === 'panelUsers' ? 'Panel Users' : key === 'credits' ? 'Credits' : key });
+            const label = t(`nav.${key}`, { defaultValue: key === 'aiSupport' ? 'AI Support' : key === 'panelUsers' ? 'Panel Users' : key === 'credits' ? 'Credits' : key === 'branding' ? 'Branding' : key });
             return (
               <NavLink
                 key={to}

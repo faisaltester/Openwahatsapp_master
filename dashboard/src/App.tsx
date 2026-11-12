@@ -28,6 +28,7 @@ const BulkGroups = lazy(() => import('./pages/BulkGroups').then(m => ({ default:
 const BulkGroupMembers = lazy(() => import('./pages/BulkGroupMembers').then(m => ({ default: m.BulkGroupMembers })));
 const AiSupport = lazy(() => import('./pages/AiSupport').then(m => ({ default: m.AiSupport })));
 const PanelUsers = lazy(() => import('./pages/PanelUsers').then(m => ({ default: m.PanelUsers })));
+const Branding = lazy(() => import('./pages/Branding').then(m => ({ default: m.Branding })));
 const BulkCampaign = lazy(() => import('./pages/BulkCampaign').then(m => ({ default: m.BulkCampaign })));
 const Credits = lazy(() => import('./pages/Credits').then(m => ({ default: m.Credits })));
 
@@ -141,6 +142,7 @@ function AppContent() {
               <Route path="templates" element={<Templates />} />
               {role === 'admin' && <Route path="api-keys" element={<ApiKeys />} />}
               {role === 'admin' && <Route path="panel-users" element={<PanelUsers />} />}
+              {role === 'admin' && <Route path="branding" element={<Branding />} />}
               <Route path="credits" element={<Credits admin={role === 'admin'} />} />
               <Route path="logs" element={<Logs />} />
               <Route path="message-tester" element={<MessageTester />} />

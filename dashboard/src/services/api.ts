@@ -1099,6 +1099,25 @@ export const panelApi = {
     request<CreditEntry>('/panel/credits', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+export interface BrandingSettings {
+  appName: string;
+  versionText: string;
+  showVersion: boolean;
+  showHelp: boolean;
+  helpText: string;
+  helpLinkText: string;
+  helpUrl: string;
+  logoUrl: string;
+  updatedAt: string | null;
+}
+
+export const brandingApi = {
+  get: () => request<BrandingSettings>('/settings/branding'),
+  /** `logo`: a data: URL to replace the logo, null to restore the built-in one, omitted to keep it. */
+  update: (data: Partial<Omit<BrandingSettings, 'logoUrl' | 'updatedAt'>> & { logo?: string | null }) =>
+    request<BrandingSettings>('/settings/branding', { method: 'PUT', body: JSON.stringify(data) }),
+};
+
 // =============================================================================
 // Audit/Logs API
 // =============================================================================
